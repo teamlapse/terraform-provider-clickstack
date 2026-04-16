@@ -1,0 +1,28 @@
+---
+page_title: "ClickStack Provider"
+subcategory: ""
+description: |-
+  Terraform provider for managing dashboards, alerts, and saved searches on ClickStack (HyperDX on ClickHouse Cloud).
+---
+
+# ClickStack Provider
+
+The ClickStack provider manages observability resources on [ClickStack](https://clickhouse.com/docs/en/observability) (HyperDX on ClickHouse Cloud).
+
+## Authentication
+
+The provider authenticates using a ClickHouse Cloud API key pair. Configure credentials via provider arguments or environment variables:
+
+| Provider Argument   | Environment Variable           | Description                        |
+|---------------------|--------------------------------|------------------------------------|
+| `organization_id`   | `CLICKSTACK_ORGANIZATION_ID`   | ClickHouse Cloud organization ID   |
+| `service_id`        | `CLICKSTACK_SERVICE_ID`        | ClickStack service ID              |
+| `api_key_id`        | `CLICKSTACK_API_KEY_ID`        | API key ID                         |
+| `api_key_secret`    | `CLICKSTACK_API_KEY_SECRET`    | API key secret                     |
+| `base_url`          | `CLICKSTACK_BASE_URL`          | API base URL (default: `https://api.clickhouse.cloud`) |
+
+## Example Usage
+
+{{ tffile "examples/provider/main.tf" }}
+
+{{ .SchemaMarkdown | trimspace }}

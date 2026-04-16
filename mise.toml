@@ -1,0 +1,8 @@
+[tools]
+go = "1.25"
+golangci-lint = "latest"
+goreleaser = "latest"
+terraform = "latest"
+
+[tools."go:github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs"]
+version = "latest"

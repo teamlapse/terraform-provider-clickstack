@@ -1,0 +1,15 @@
+version: "2"
+
+linters:
+  enable:
+    - goheader
+  settings:
+    goheader:
+      template: |-
+        Copyright (c) Lapse Technologies, Inc.
+        SPDX-License-Identifier: MPL-2.0
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        source: "defer .*\\.Close\\(\\)"
