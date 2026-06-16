@@ -9,11 +9,62 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
+	"sync"
 	"time"
 )
 
-// Client is an HTTP client for the ClickStack API on ClickHouse Cloud.
+const (
+	defaultRateLimit = 5.0
+	maxRetries       = 4
+	baseRetryDelay   = 500 * time.Millisecond
+	maxRetryDelay    = 30 * time.Second
+)
+
+type rateLimiter struct {
+	mu       sync.Mutex
+	tokens   float64
+	max      float64
+	rate     float64
+	lastFill time.Time
+}
+
+func newRateLimiter(rps float64) *rateLimiter {
+	return &rateLimiter{
+		tokens:   rps,
+		max:      rps,
+		rate:     rps,
+		lastFill: time.Now(),
+	}
+}
+
+func (r *rateLimiter) wait(ctx context.Context) error {
+	for {
+		r.mu.Lock()
+		now := time.Now()
+		elapsed := now.Sub(r.lastFill).Seconds()
+		r.tokens = math.Min(r.max, r.tokens+elapsed*r.rate)
+		r.lastFill = now
+
+		if r.tokens >= 1 {
+			r.tokens--
+			r.mu.Unlock()
+			return nil
+		}
+
+		waitDur := time.Duration((1-r.tokens)/r.rate*1000) * time.Millisecond
+		r.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitDur):
+		}
+	}
+}
+
 type Client struct {
 	baseURL        string
 	organizationID string
@@ -21,9 +72,9 @@ type Client struct {
 	apiKeyID       string
 	apiKeySecret   string
 	httpClient     *http.Client
+	rateLimiter    *rateLimiter
 }
 
-// NewClient creates a new ClickStack API client.
 func NewClient(baseURL, organizationID, serviceID, apiKeyID, apiKeySecret string) *Client {
 	return &Client{
 		baseURL:        baseURL,
@@ -32,6 +83,7 @@ func NewClient(baseURL, organizationID, serviceID, apiKeyID, apiKeySecret string
 		apiKeyID:       apiKeyID,
 		apiKeySecret:   apiKeySecret,
 		httpClient:     &http.Client{Timeout: 30 * time.Second},
+		rateLimiter:    newRateLimiter(defaultRateLimit),
 	}
 }
 
@@ -40,53 +92,105 @@ func (c *Client) basePath() string {
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, body any) ([]byte, error) {
-	var reqBody io.Reader
+	var jsonBody []byte
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		var err error
+		jsonBody, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
-		reqBody = bytes.NewReader(jsonBody)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.basePath()+path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	req.SetBasicAuth(c.apiKeyID, c.apiKeySecret)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var apiErr APIResponse[json.RawMessage]
-		msg := string(respBody)
-		requestID := ""
-		if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != "" {
-			msg = apiErr.Error
-			requestID = apiErr.RequestID
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if err := c.rateLimiter.wait(ctx); err != nil {
+			return nil, err
 		}
-		if resp.StatusCode == http.StatusNotFound {
-			return nil, &NotFoundError{Message: msg, RequestID: requestID}
+
+		var reqBody io.Reader
+		if jsonBody != nil {
+			reqBody = bytes.NewReader(jsonBody)
 		}
-		return nil, fmt.Errorf("API error (status %d, requestId %s): %s", resp.StatusCode, requestID, msg)
+
+		req, err := http.NewRequestWithContext(ctx, method, c.basePath()+path, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		req.SetBasicAuth(c.apiKeyID, c.apiKeySecret)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("executing request: %w", err)
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("reading response body: %w", err)
+		}
+		err = resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("closing response body: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			delay := retryAfterDelay(resp, attempt)
+			var apiErr APIResponse[json.RawMessage]
+			msg := string(respBody)
+			requestID := ""
+			if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != "" {
+				msg = apiErr.Error
+				requestID = apiErr.RequestID
+			}
+			lastErr = fmt.Errorf("API error (status %d, requestId %s): %s", resp.StatusCode, requestID, msg)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+				continue
+			}
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			var apiErr APIResponse[json.RawMessage]
+			msg := string(respBody)
+			requestID := ""
+			if json.Unmarshal(respBody, &apiErr) == nil && apiErr.Error != "" {
+				msg = apiErr.Error
+				requestID = apiErr.RequestID
+			}
+			if resp.StatusCode == http.StatusNotFound {
+				return nil, &NotFoundError{Message: msg, RequestID: requestID}
+			}
+			return nil, fmt.Errorf("API error (status %d, requestId %s): %s", resp.StatusCode, requestID, msg)
+		}
+
+		return respBody, nil
 	}
 
-	return respBody, nil
+	return nil, fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
 }
 
-// unwrapResult extracts the "result" field from the API response envelope.
+func retryAfterDelay(resp *http.Response, attempt int) time.Duration {
+	if ra := resp.Header.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.ParseFloat(ra, 64); err == nil {
+			return time.Duration(secs * float64(time.Second))
+		}
+		if t, err := http.ParseTime(ra); err == nil {
+			if d := time.Until(t); d > 0 {
+				return d
+			}
+		}
+	}
+	delay := time.Duration(float64(baseRetryDelay) * math.Pow(2, float64(attempt)))
+	if delay > maxRetryDelay {
+		delay = maxRetryDelay
+	}
+	return delay
+}
+
 func unwrapResult[T any](data []byte) (T, error) {
 	var resp APIResponse[T]
 	if err := json.Unmarshal(data, &resp); err != nil {
@@ -96,7 +200,6 @@ func unwrapResult[T any](data []byte) (T, error) {
 	return resp.Result, nil
 }
 
-// NotFoundError is returned when the API returns a 404.
 type NotFoundError struct {
 	Message   string
 	RequestID string
@@ -106,7 +209,6 @@ func (e *NotFoundError) Error() string {
 	return fmt.Sprintf("not found (requestId %s): %s", e.RequestID, e.Message)
 }
 
-// IsNotFound returns true if the error is a 404 from the API.
 func IsNotFound(err error) bool {
 	if err == nil {
 		return false
@@ -114,8 +216,6 @@ func IsNotFound(err error) bool {
 	_, ok := err.(*NotFoundError)
 	return ok
 }
-
-// --- Dashboards ---
 
 func (c *Client) ListDashboards(ctx context.Context) ([]Dashboard, error) {
 	data, err := c.doRequest(ctx, http.MethodGet, "/dashboards", nil)
@@ -166,8 +266,6 @@ func (c *Client) DeleteDashboard(ctx context.Context, id string) error {
 	return err
 }
 
-// --- Alerts ---
-
 func (c *Client) ListAlerts(ctx context.Context) ([]Alert, error) {
 	data, err := c.doRequest(ctx, http.MethodGet, "/alerts", nil)
 	if err != nil {
@@ -216,8 +314,6 @@ func (c *Client) DeleteAlert(ctx context.Context, id string) error {
 	_, err := c.doRequest(ctx, http.MethodDelete, "/alerts/"+id, nil)
 	return err
 }
-
-// --- Saved Searches ---
 
 func (c *Client) ListSavedSearches(ctx context.Context) ([]SavedSearch, error) {
 	data, err := c.doRequest(ctx, http.MethodGet, "/savedSearches", nil)
@@ -268,8 +364,6 @@ func (c *Client) DeleteSavedSearch(ctx context.Context, id string) error {
 	return err
 }
 
-// --- Sources (read-only) ---
-
 func (c *Client) ListSources(ctx context.Context) ([]Source, error) {
 	data, err := c.doRequest(ctx, http.MethodGet, "/sources", nil)
 	if err != nil {
@@ -277,8 +371,6 @@ func (c *Client) ListSources(ctx context.Context) ([]Source, error) {
 	}
 	return unwrapResult[[]Source](data)
 }
-
-// --- Webhooks (read-only) ---
 
 func (c *Client) ListWebhooks(ctx context.Context) ([]Webhook, error) {
 	data, err := c.doRequest(ctx, http.MethodGet, "/webhooks", nil)
