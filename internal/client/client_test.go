@@ -6,9 +6,12 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func testServer(t *testing.T, handler http.Handler) *Client {
@@ -38,7 +41,133 @@ func jsonError(t *testing.T, w http.ResponseWriter, status int, msg string) {
 	}
 }
 
-// --- Auth ---
+func TestClient_RetriesOn429(t *testing.T) {
+	var attempts atomic.Int32
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := attempts.Add(1)
+		if n < 3 {
+			w.Header().Set("Retry-After", "0")
+			jsonError(t, w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS")
+			return
+		}
+		jsonResponse(t, w, 200, []Dashboard{{ID: "dash-1", Name: "OK"}})
+	}))
+
+	dashs, err := c.ListDashboards(context.Background())
+	if err != nil {
+		t.Fatalf("expected success after retries, got: %v", err)
+	}
+	if len(dashs) != 1 {
+		t.Errorf("expected 1 dashboard, got %d", len(dashs))
+	}
+	if attempts.Load() != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts.Load())
+	}
+}
+
+func TestClient_ExhaustsRetries(t *testing.T) {
+	var attempts atomic.Int32
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts.Add(1)
+		w.Header().Set("Retry-After", "0")
+		jsonError(t, w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS")
+	}))
+
+	_, err := c.ListDashboards(context.Background())
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if attempts.Load() != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts.Load())
+	}
+}
+
+func TestClient_RespectsRetryAfterHeader(t *testing.T) {
+	var attempts atomic.Int32
+	var firstCallTime time.Time
+	retryAfterSecs := "0"
+
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := attempts.Add(1)
+		if n == 1 {
+			firstCallTime = time.Now()
+			w.Header().Set("Retry-After", retryAfterSecs)
+			jsonError(t, w, http.StatusTooManyRequests, "TOO_MANY_REQUESTS")
+			return
+		}
+		jsonResponse(t, w, 200, []Dashboard{})
+	}))
+
+	_, err := c.ListDashboards(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if firstCallTime.IsZero() {
+		t.Fatal("first call time not recorded")
+	}
+	_ = firstCallTime
+}
+
+func TestRetryAfterDelay_Seconds(t *testing.T) {
+	w := httptest.NewRecorder()
+	w.Header().Set("Retry-After", "2")
+	resp := w.Result()
+
+	got := retryAfterDelay(resp, 0)
+	if got != 2*time.Second {
+		t.Errorf("expected 2s, got %v", got)
+	}
+}
+
+func TestRetryAfterDelay_HTTPDate(t *testing.T) {
+	w := httptest.NewRecorder()
+	future := time.Now().Add(3 * time.Second)
+	w.Header().Set("Retry-After", future.UTC().Format(http.TimeFormat))
+	resp := w.Result()
+
+	got := retryAfterDelay(resp, 0)
+	if got < 2*time.Second || got > 4*time.Second {
+		t.Errorf("expected ~3s, got %v", got)
+	}
+}
+
+func TestRetryAfterDelay_ExponentialFallback(t *testing.T) {
+	cases := []struct {
+		attempt  int
+		expected time.Duration
+	}{
+		{0, 500 * time.Millisecond},
+		{1, 1 * time.Second},
+		{2, 2 * time.Second},
+		{3, 4 * time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("attempt_%d", tc.attempt), func(t *testing.T) {
+			w := httptest.NewRecorder()
+			resp := w.Result()
+			got := retryAfterDelay(resp, tc.attempt)
+			if got != tc.expected {
+				t.Errorf("attempt %d: expected %v, got %v", tc.attempt, tc.expected, got)
+			}
+		})
+	}
+}
+
+func TestRateLimiter_ContextCancellation(t *testing.T) {
+	rl := &rateLimiter{
+		tokens:   0,
+		max:      1,
+		rate:     0.001,
+		lastFill: time.Now(),
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := rl.wait(ctx)
+	if err == nil {
+		t.Fatal("expected context cancellation error")
+	}
+}
 
 func TestClient_BasicAuth(t *testing.T) {
 	var gotUser, gotPass string
@@ -68,8 +197,6 @@ func TestClient_BasePath(t *testing.T) {
 		t.Errorf("expected path %s, got %s", expected, gotPath)
 	}
 }
-
-// --- Error handling ---
 
 func TestClient_NotFoundError(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -103,8 +230,6 @@ func TestIsNotFound_Nil(t *testing.T) {
 		t.Error("IsNotFound(nil) should be false")
 	}
 }
-
-// --- Dashboards ---
 
 func TestClient_CreateDashboard(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,8 +323,6 @@ func TestClient_ListDashboards(t *testing.T) {
 	}
 }
 
-// --- Alerts ---
-
 func TestClient_CreateAlert(t *testing.T) {
 	name := "High Errors"
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -260,8 +383,6 @@ func TestClient_DeleteAlert(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-// --- Saved Searches ---
 
 func TestClient_CreateSavedSearch(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -343,8 +464,6 @@ func TestClient_UpdateSavedSearch(t *testing.T) {
 	}
 }
 
-// --- Sources ---
-
 func TestClient_ListSources(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		jsonResponse(t, w, 200, []Source{
@@ -364,8 +483,6 @@ func TestClient_ListSources(t *testing.T) {
 		t.Errorf("expected kind 'log', got %q", sources[0].Kind)
 	}
 }
-
-// --- Webhooks ---
 
 func TestClient_ListWebhooks(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
