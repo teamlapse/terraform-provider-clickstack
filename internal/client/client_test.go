@@ -389,10 +389,20 @@ func TestClient_CreateSavedSearch(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		jsonResponse(t, w, 200, SavedSearch{ID: "ss-1", Name: "Errors", Query: "level:error", Source: "log"})
+		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		var got SavedSearch
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceID != "src-logs" || got.Where != "SeverityText:ERROR" || got.WhereLanguage != "lucene" {
+			t.Errorf("unexpected request: %+v", got)
+		}
+		jsonResponse(t, w, 200, SavedSearch{ID: "ss-1", Name: "Errors", SourceID: "src-logs", Where: "SeverityText:ERROR", WhereLanguage: "lucene"})
 	}))
 
-	s, err := c.CreateSavedSearch(context.Background(), SavedSearch{Name: "Errors", Query: "level:error", Source: "log"})
+	s, err := c.CreateSavedSearch(context.Background(), SavedSearch{Name: "Errors", SourceID: "src-logs", Where: "SeverityText:ERROR", WhereLanguage: "lucene"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,8 +412,11 @@ func TestClient_CreateSavedSearch(t *testing.T) {
 }
 
 func TestClient_GetSavedSearch(t *testing.T) {
-	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		jsonResponse(t, w, 200, SavedSearch{ID: "ss-1", Name: "Errors", Query: "level:error", Source: "log"})
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches/ss-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		jsonResponse(t, w, 200, SavedSearch{ID: "ss-1", Name: "Errors", SourceID: "src-logs"})
 	}))
 
 	s, err := c.GetSavedSearch(context.Background(), "ss-1")
@@ -420,11 +433,34 @@ func TestClient_DeleteSavedSearch(t *testing.T) {
 		if r.Method != http.MethodDelete {
 			t.Errorf("expected DELETE, got %s", r.Method)
 		}
+		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches/ss-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
 		jsonResponse(t, w, 200, nil)
 	}))
 
 	if err := c.DeleteSavedSearch(context.Background(), "ss-1"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestClient_UpdateSavedSearch(t *testing.T) {
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches/ss-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		jsonResponse(t, w, 200, SavedSearch{ID: "ss-1", Name: "Errors", SourceID: "src-logs"})
+	}))
+
+	search, err := c.UpdateSavedSearch(context.Background(), "ss-1", SavedSearch{Name: "Errors", SourceID: "src-logs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if search.ID != "ss-1" {
+		t.Errorf("expected id ss-1, got %s", search.ID)
 	}
 }
 

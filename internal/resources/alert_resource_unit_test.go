@@ -125,14 +125,9 @@ func TestUnitAlertResource_savedSearch(t *testing.T) {
 			{
 				Config: mock.ProviderConfig() + `
 resource "clickstack_saved_search" "errors" {
-  name   = "Error Logs"
-  query  = "level:error"
-  source = "log"
-
-  sort {
-    field = "timestamp"
-    order = "desc"
-  }
+  name      = "Error Logs"
+  source_id = "src-log"
+  where     = "SeverityText:ERROR"
 }
 
 resource "clickstack_alert" "test" {
@@ -170,14 +165,9 @@ func TestUnitAlertResource_pagerduty(t *testing.T) {
 			{
 				Config: mock.ProviderConfig() + `
 resource "clickstack_saved_search" "oom" {
-  name   = "OOM Events"
-  query  = "OOMKilled"
-  source = "log"
-
-  sort {
-    field = "timestamp"
-    order = "desc"
-  }
+  name      = "OOM Events"
+  source_id = "src-log"
+  where     = "Body:OOMKilled"
 }
 
 data "clickstack_webhooks" "all" {}

@@ -124,10 +124,12 @@ func TestAccAlertResource_savedSearch(t *testing.T) {
 		Steps: []resource.TestStep{
 			{
 				Config: `
+data "clickstack_sources" "all" {}
+
 resource "clickstack_saved_search" "test" {
-  name   = "tf-acc-test-saved-search-for-alert"
-  query  = "level:error"
-  source = "log"
+  name      = "tf-acc-test-saved-search-for-alert"
+  source_id = data.clickstack_sources.all.sources[0].id
+  where     = "SeverityText:ERROR"
 }
 
 resource "clickstack_alert" "saved_search_alert" {

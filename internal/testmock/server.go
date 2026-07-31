@@ -104,7 +104,7 @@ func NewServer(t *testing.T) *Server {
 		}
 	})
 
-	mux.HandleFunc(prefix+"/savedSearches", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(prefix+"/saved-searches", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			s.listSavedSearches(t, w)
@@ -114,8 +114,8 @@ func NewServer(t *testing.T) *Server {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	mux.HandleFunc(prefix+"/savedSearches/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, prefix+"/savedSearches/")
+	mux.HandleFunc(prefix+"/saved-searches/", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimPrefix(r.URL.Path, prefix+"/saved-searches/")
 		switch r.Method {
 		case http.MethodGet:
 			s.getSavedSearch(t, w, id)
@@ -358,6 +358,14 @@ func (s *Server) createSavedSearch(t *testing.T, w http.ResponseWriter, r *http.
 		return
 	}
 	ss.ID = s.genID()
+	if ss.WhereLanguage == "" {
+		ss.WhereLanguage = "lucene"
+	}
+	for i := range ss.Filters {
+		if ss.Filters[i].Type == "" {
+			ss.Filters[i].Type = "sql"
+		}
+	}
 	s.mu.Lock()
 	s.savedSearches[ss.ID] = ss
 	s.mu.Unlock()
@@ -389,6 +397,14 @@ func (s *Server) updateSavedSearch(t *testing.T, w http.ResponseWriter, r *http.
 		return
 	}
 	ss.ID = id
+	if ss.WhereLanguage == "" {
+		ss.WhereLanguage = "lucene"
+	}
+	for i := range ss.Filters {
+		if ss.Filters[i].Type == "" {
+			ss.Filters[i].Type = "sql"
+		}
+	}
 	s.mu.Lock()
 	s.savedSearches[id] = ss
 	s.mu.Unlock()
