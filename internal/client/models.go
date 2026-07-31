@@ -97,19 +97,24 @@ type AlertSilenced struct {
 
 // SavedSearch represents a ClickStack saved search.
 type SavedSearch struct {
-	ID      string           `json:"id,omitempty"`
-	Name    string           `json:"name"`
-	Query   string           `json:"query"`
-	Source  string           `json:"source"`
-	Tags    []string         `json:"tags,omitempty"`
-	Columns []string         `json:"columns,omitempty"`
-	Sort    *SavedSearchSort `json:"sort,omitempty"`
+	ID            string              `json:"id,omitempty"`
+	Name          string              `json:"name"`
+	SourceID      string              `json:"sourceId"`
+	Select        string              `json:"select,omitempty"`
+	Where         string              `json:"where,omitempty"`
+	WhereLanguage string              `json:"whereLanguage,omitempty"`
+	OrderBy       string              `json:"orderBy,omitempty"`
+	Tags          []string            `json:"tags,omitempty"`
+	Filters       []SavedSearchFilter `json:"filters,omitempty"`
+	TeamID        string              `json:"teamId,omitempty"`
+	CreatedAt     string              `json:"createdAt,omitempty"`
+	UpdatedAt     string              `json:"updatedAt,omitempty"`
 }
 
-// SavedSearchSort represents the sort order for a saved search.
-type SavedSearchSort struct {
-	Field string `json:"field"`
-	Order string `json:"order"`
+// SavedSearchFilter represents a SQL predicate pinned to a saved search.
+type SavedSearchFilter struct {
+	Type      string `json:"type,omitempty"`
+	Condition string `json:"condition"`
 }
 
 // Source represents a ClickStack data source (read-only).

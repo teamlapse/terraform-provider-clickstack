@@ -220,7 +220,7 @@ func (c *Client) DeleteAlert(ctx context.Context, id string) error {
 // --- Saved Searches ---
 
 func (c *Client) ListSavedSearches(ctx context.Context) ([]SavedSearch, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, "/savedSearches", nil)
+	data, err := c.doRequest(ctx, http.MethodGet, "/saved-searches", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (c *Client) ListSavedSearches(ctx context.Context) ([]SavedSearch, error) {
 }
 
 func (c *Client) GetSavedSearch(ctx context.Context, id string) (*SavedSearch, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, "/savedSearches/"+id, nil)
+	data, err := c.doRequest(ctx, http.MethodGet, "/saved-searches/"+id, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (c *Client) GetSavedSearch(ctx context.Context, id string) (*SavedSearch, e
 }
 
 func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*SavedSearch, error) {
-	data, err := c.doRequest(ctx, http.MethodPost, "/savedSearches", search)
+	data, err := c.doRequest(ctx, http.MethodPost, "/saved-searches", search)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +252,7 @@ func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*Sa
 }
 
 func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedSearch) (*SavedSearch, error) {
-	data, err := c.doRequest(ctx, http.MethodPut, "/savedSearches/"+id, search)
+	data, err := c.doRequest(ctx, http.MethodPut, "/saved-searches/"+id, search)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +264,7 @@ func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedS
 }
 
 func (c *Client) DeleteSavedSearch(ctx context.Context, id string) error {
-	_, err := c.doRequest(ctx, http.MethodDelete, "/savedSearches/"+id, nil)
+	_, err := c.doRequest(ctx, http.MethodDelete, "/saved-searches/"+id, nil)
 	return err
 }
 

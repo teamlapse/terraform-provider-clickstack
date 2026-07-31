@@ -65,16 +65,14 @@ provider "clickstack" {
 ## Quick Start
 
 ```hcl
+data "clickstack_sources" "all" {}
+
 # Create a saved search for error logs
 resource "clickstack_saved_search" "errors" {
-  name   = "API Errors"
-  query  = "level:error service:api-gateway"
-  source = "log"
-
-  sort {
-    field = "timestamp"
-    order = "desc"
-  }
+  name      = "API Errors"
+  source_id = data.clickstack_sources.all.sources[0].id
+  where     = "ServiceName:api-gateway AND SeverityText:ERROR"
+  order_by  = "Timestamp DESC"
 }
 
 # Alert when errors exceed threshold

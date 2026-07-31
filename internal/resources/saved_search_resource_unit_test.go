@@ -19,109 +19,71 @@ func TestUnitSavedSearchResource_basic(t *testing.T) {
 			{
 				Config: mock.ProviderConfig() + `
 resource "clickstack_saved_search" "test" {
-  name    = "API Errors"
-  query   = "level:error service:api"
-  source  = "log"
-  tags    = ["api", "errors"]
-  columns = ["timestamp", "level", "message"]
+  name           = "API Errors"
+  source_id      = "src-log"
+  select         = "Timestamp, ServiceName, Body"
+  where          = "SeverityText:ERROR"
+  where_language = "lucene"
+  order_by       = "Timestamp DESC"
+  tags           = ["api", "errors"]
 
-  sort {
-    field = "timestamp"
-    order = "desc"
+  filters {
+    condition = "ServiceName IN ('checkout', 'payments')"
   }
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("clickstack_saved_search.test", "id"),
 					resource.TestCheckResourceAttr("clickstack_saved_search.test", "name", "API Errors"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "query", "level:error service:api"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "source", "log"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "source_id", "src-log"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "select", "Timestamp, ServiceName, Body"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "where", "SeverityText:ERROR"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "where_language", "lucene"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "order_by", "Timestamp DESC"),
 					resource.TestCheckResourceAttr("clickstack_saved_search.test", "tags.#", "2"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "columns.#", "3"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "sort.field", "timestamp"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "sort.order", "desc"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "filters.#", "1"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "filters.0.type", "sql"),
 				),
 			},
-			// Update: change query and tags
 			{
 				Config: mock.ProviderConfig() + `
 resource "clickstack_saved_search" "test" {
-  name    = "All Errors"
-  query   = "level:error OR level:warn"
-  source  = "log"
-  tags    = ["errors"]
-
-  sort {
-    field = "timestamp"
-    order = "asc"
-  }
+  name           = "All Errors"
+  source_id      = "src-log"
+  where          = "SeverityText IN ('ERROR', 'WARN')"
+  where_language = "sql"
+  tags           = ["errors"]
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("clickstack_saved_search.test", "name", "All Errors"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "query", "level:error OR level:warn"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "where_language", "sql"),
 					resource.TestCheckResourceAttr("clickstack_saved_search.test", "tags.#", "1"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.test", "sort.order", "asc"),
+					resource.TestCheckResourceAttr("clickstack_saved_search.test", "filters.#", "0"),
 				),
 			},
 		},
 	})
 }
 
-func TestUnitSavedSearchResource_minimal(t *testing.T) {
+func TestUnitSavedSearchResource_defaults(t *testing.T) {
 	mock := testmock.NewServer(t)
 
 	resource.UnitTest(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			{
-				Config: mock.ProviderConfig() + `
+		Steps: []resource.TestStep{{
+			Config: mock.ProviderConfig() + `
 resource "clickstack_saved_search" "minimal" {
-  name   = "Simple Search"
-  query  = "level:error"
-  source = "log"
-
-  sort {
-    field = "timestamp"
-    order = "desc"
-  }
+  name      = "Simple Search"
+  source_id = "src-log"
 }
 `,
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttrSet("clickstack_saved_search.minimal", "id"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "name", "Simple Search"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "tags.#", "0"),
-					resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "columns.#", "0"),
-				),
-			},
-		},
-	})
-}
-
-func TestUnitSavedSearchResource_trace(t *testing.T) {
-	mock := testmock.NewServer(t)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			{
-				Config: mock.ProviderConfig() + `
-resource "clickstack_saved_search" "traces" {
-  name   = "Slow Traces"
-  query  = "duration:>1000"
-  source = "trace"
-  tags   = ["performance"]
-
-  sort {
-    field = "duration"
-    order = "desc"
-  }
-}
-`,
-				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("clickstack_saved_search.traces", "source", "trace"),
-				),
-			},
-		},
+			Check: resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttrSet("clickstack_saved_search.minimal", "id"),
+				resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "where_language", "lucene"),
+				resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "tags.#", "0"),
+				resource.TestCheckResourceAttr("clickstack_saved_search.minimal", "filters.#", "0"),
+			),
+		}},
 	})
 }

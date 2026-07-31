@@ -4,6 +4,7 @@
 
 # Look up available webhooks (Slack, PagerDuty, etc.)
 data "clickstack_webhooks" "all" {}
+data "clickstack_sources" "all" {}
 
 # --- Alert from a dashboard tile ---
 # Fires when the error count tile exceeds 100 errors in a 5-minute window.
@@ -28,10 +29,10 @@ resource "clickstack_alert" "high_error_rate" {
 # --- Alert from a saved search ---
 # Fires when more than 5 OOM kills are detected in a 15-minute window.
 resource "clickstack_saved_search" "oom_kills" {
-  name   = "OOM Kill Events"
-  query  = "\"Out of memory\" OR \"OOMKilled\""
-  source = "log"
-  tags   = ["infrastructure", "alerts"]
+  name      = "OOM Kill Events"
+  source_id = data.clickstack_sources.all.sources[0].id
+  where     = "Body:(\"Out of memory\" OR \"OOMKilled\")"
+  tags      = ["infrastructure", "alerts"]
 }
 
 resource "clickstack_alert" "oom_kills" {

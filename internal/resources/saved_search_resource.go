@@ -6,16 +6,18 @@ package resources
 import (
 	"context"
 
-	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
 )
 
 var (
@@ -28,18 +30,20 @@ type SavedSearchResource struct {
 }
 
 type savedSearchResourceModel struct {
-	ID      types.String          `tfsdk:"id"`
-	Name    types.String          `tfsdk:"name"`
-	Query   types.String          `tfsdk:"query"`
-	Source  types.String          `tfsdk:"source"`
-	Tags    types.List            `tfsdk:"tags"`
-	Columns types.List            `tfsdk:"columns"`
-	Sort    *savedSearchSortModel `tfsdk:"sort"`
+	ID            types.String             `tfsdk:"id"`
+	Name          types.String             `tfsdk:"name"`
+	SourceID      types.String             `tfsdk:"source_id"`
+	Select        types.String             `tfsdk:"select"`
+	Where         types.String             `tfsdk:"where"`
+	WhereLanguage types.String             `tfsdk:"where_language"`
+	OrderBy       types.String             `tfsdk:"order_by"`
+	Tags          types.List               `tfsdk:"tags"`
+	Filters       []savedSearchFilterModel `tfsdk:"filters"`
 }
 
-type savedSearchSortModel struct {
-	Field types.String `tfsdk:"field"`
-	Order types.String `tfsdk:"order"`
+type savedSearchFilterModel struct {
+	Type      types.String `tfsdk:"type"`
+	Condition types.String `tfsdk:"condition"`
 }
 
 func NewSavedSearchResource() resource.Resource {
@@ -52,57 +56,71 @@ func (r *SavedSearchResource) Metadata(_ context.Context, req resource.MetadataR
 
 func (r *SavedSearchResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		Description: "Manages a ClickStack saved search. Saved searches can be referenced by alerts as a source.",
+		Description: "Manages a ClickStack saved search. Saved searches can be used as alert sources.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed:    true,
-				Description: "Saved search ID.",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
+				Computed:      true,
+				Description:   "Saved search ID.",
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 			},
 			"name": schema.StringAttribute{
 				Required:    true,
-				Description: "Saved search name.",
+				Description: "Display name for the saved search.",
+				Validators:  []validator.String{stringvalidator.UTF8LengthAtMost(1024)},
 			},
-			"query": schema.StringAttribute{
+			"source_id": schema.StringAttribute{
 				Required:    true,
-				Description: "Search query string.",
+				Description: "ID of the ClickStack source to query. Use data.clickstack_sources to discover source IDs.",
 			},
-			"source": schema.StringAttribute{
-				Required:    true,
-				Description: "Data source kind: 'log', 'trace', 'metric', or 'session'.",
-				Validators: []validator.String{
-					stringvalidator.OneOf("log", "trace", "metric", "session"),
-				},
+			"select": schema.StringAttribute{
+				Optional:    true,
+				Description: "Comma-separated column expressions to display. Empty uses the source default.",
+				Validators:  []validator.String{stringvalidator.UTF8LengthAtMost(4096)},
+			},
+			"where": schema.StringAttribute{
+				Optional:    true,
+				Description: "Row filter expression, interpreted according to where_language.",
+				Validators:  []validator.String{stringvalidator.UTF8LengthAtMost(8192)},
+			},
+			"where_language": schema.StringAttribute{
+				Optional:    true,
+				Computed:    true,
+				Default:     stringdefault.StaticString("lucene"),
+				Description: "Language used for where: lucene or sql. Defaults to lucene.",
+				Validators:  []validator.String{stringvalidator.OneOf("lucene", "sql")},
+			},
+			"order_by": schema.StringAttribute{
+				Optional:    true,
+				Description: "ORDER BY expression. Empty uses the source default.",
+				Validators:  []validator.String{stringvalidator.UTF8LengthAtMost(1024)},
 			},
 			"tags": schema.ListAttribute{
 				Optional:    true,
-				Description: "Tags for organizing saved searches.",
+				Description: "Tags used to organize saved searches.",
 				ElementType: types.StringType,
-			},
-			"columns": schema.ListAttribute{
-				Optional:    true,
-				Description: "Columns to display in search results.",
-				ElementType: types.StringType,
+				Validators: []validator.List{
+					listvalidator.SizeAtMost(50),
+					listvalidator.ValueStringsAre(stringvalidator.UTF8LengthAtMost(32)),
+				},
 			},
 		},
 		Blocks: map[string]schema.Block{
-			"sort": schema.SingleNestedBlock{
-				Description: "Sort order for search results.",
-				Attributes: map[string]schema.Attribute{
-					"field": schema.StringAttribute{
-						Required:    true,
-						Description: "Field to sort by.",
+			"filters": schema.ListNestedBlock{
+				Description: "Structured SQL filters pinned to the saved search.",
+				NestedObject: schema.NestedBlockObject{Attributes: map[string]schema.Attribute{
+					"type": schema.StringAttribute{
+						Optional:    true,
+						Computed:    true,
+						Default:     stringdefault.StaticString("sql"),
+						Description: "Filter type. ClickStack currently supports sql.",
+						Validators:  []validator.String{stringvalidator.OneOf("sql")},
 					},
-					"order": schema.StringAttribute{
+					"condition": schema.StringAttribute{
 						Required:    true,
-						Description: "Sort direction: 'asc' or 'desc'.",
-						Validators: []validator.String{
-							stringvalidator.OneOf("asc", "desc"),
-						},
+						Description: "SQL predicate, for example ServiceName IN ('checkout', 'payments').",
 					},
-				},
+				}},
+				Validators: []validator.List{listvalidator.SizeAtMost(100)},
 			},
 		},
 	}
@@ -131,19 +149,12 @@ func (r *SavedSearchResource) Create(ctx context.Context, req resource.CreateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	created, err := r.client.CreateSavedSearch(ctx, search)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to create saved search", err.Error())
 		return
 	}
-
-	state := flattenSavedSearch(ctx, created, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, flattenSavedSearch(ctx, created, &resp.Diagnostics))...)
 }
 
 func (r *SavedSearchResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -162,23 +173,12 @@ func (r *SavedSearchResource) Read(ctx context.Context, req resource.ReadRequest
 		resp.Diagnostics.AddError("Unable to read saved search", err.Error())
 		return
 	}
-
-	newState := flattenSavedSearch(ctx, search, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, flattenSavedSearch(ctx, search, &resp.Diagnostics))...)
 }
 
 func (r *SavedSearchResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan savedSearchResourceModel
+	var plan, state savedSearchResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	var state savedSearchResourceModel
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -188,19 +188,12 @@ func (r *SavedSearchResource) Update(ctx context.Context, req resource.UpdateReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
 	updated, err := r.client.UpdateSavedSearch(ctx, state.ID.ValueString(), search)
 	if err != nil {
 		resp.Diagnostics.AddError("Unable to update saved search", err.Error())
 		return
 	}
-
-	newState := flattenSavedSearch(ctx, updated, &resp.Diagnostics)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, flattenSavedSearch(ctx, updated, &resp.Diagnostics))...)
 }
 
 func (r *SavedSearchResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
@@ -209,12 +202,7 @@ func (r *SavedSearchResource) Delete(ctx context.Context, req resource.DeleteReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
-	err := r.client.DeleteSavedSearch(ctx, state.ID.ValueString())
-	if err != nil {
-		if client.IsNotFound(err) {
-			return
-		}
+	if err := r.client.DeleteSavedSearch(ctx, state.ID.ValueString()); err != nil && !client.IsNotFound(err) {
 		resp.Diagnostics.AddError("Unable to delete saved search", err.Error())
 	}
 }
@@ -224,64 +212,61 @@ func (r *SavedSearchResource) ImportState(ctx context.Context, req resource.Impo
 }
 
 func expandSavedSearch(ctx context.Context, plan savedSearchResourceModel, diags *diag.Diagnostics) client.SavedSearch {
-	s := client.SavedSearch{
-		Name:   plan.Name.ValueString(),
-		Query:  plan.Query.ValueString(),
-		Source: plan.Source.ValueString(),
+	search := client.SavedSearch{
+		Name:          plan.Name.ValueString(),
+		SourceID:      plan.SourceID.ValueString(),
+		Select:        plan.Select.ValueString(),
+		Where:         plan.Where.ValueString(),
+		WhereLanguage: plan.WhereLanguage.ValueString(),
+		OrderBy:       plan.OrderBy.ValueString(),
 	}
-
 	if !plan.Tags.IsNull() && !plan.Tags.IsUnknown() {
-		var tags []string
-		diags.Append(plan.Tags.ElementsAs(ctx, &tags, false)...)
-		s.Tags = tags
+		diags.Append(plan.Tags.ElementsAs(ctx, &search.Tags, false)...)
 	}
-
-	if !plan.Columns.IsNull() && !plan.Columns.IsUnknown() {
-		var columns []string
-		diags.Append(plan.Columns.ElementsAs(ctx, &columns, false)...)
-		s.Columns = columns
+	for _, filter := range plan.Filters {
+		search.Filters = append(search.Filters, client.SavedSearchFilter{
+			Type: filter.Type.ValueString(), Condition: filter.Condition.ValueString(),
+		})
 	}
-
-	if plan.Sort != nil {
-		s.Sort = &client.SavedSearchSort{
-			Field: plan.Sort.Field.ValueString(),
-			Order: plan.Sort.Order.ValueString(),
-		}
-	}
-
-	return s
+	return search
 }
 
-func flattenSavedSearch(ctx context.Context, s *client.SavedSearch, diags *diag.Diagnostics) savedSearchResourceModel {
-	model := savedSearchResourceModel{
-		ID:     types.StringValue(s.ID),
-		Name:   types.StringValue(s.Name),
-		Query:  types.StringValue(s.Query),
-		Source: types.StringValue(s.Source),
+func flattenSavedSearch(ctx context.Context, search *client.SavedSearch, diags *diag.Diagnostics) savedSearchResourceModel {
+	whereLanguage := search.WhereLanguage
+	if whereLanguage == "" {
+		whereLanguage = "lucene"
 	}
-
-	if len(s.Tags) > 0 {
-		tagList, d := types.ListValueFrom(ctx, types.StringType, s.Tags)
-		diags.Append(d...)
-		model.Tags = tagList
+	state := savedSearchResourceModel{
+		ID:            types.StringValue(search.ID),
+		Name:          types.StringValue(search.Name),
+		SourceID:      types.StringValue(search.SourceID),
+		Select:        stringValueOrNull(search.Select),
+		Where:         stringValueOrNull(search.Where),
+		WhereLanguage: types.StringValue(whereLanguage),
+		OrderBy:       stringValueOrNull(search.OrderBy),
+	}
+	if len(search.Tags) == 0 {
+		state.Tags = types.ListNull(types.StringType)
 	} else {
-		model.Tags = types.ListNull(types.StringType)
+		var tagDiags diag.Diagnostics
+		state.Tags, tagDiags = types.ListValueFrom(ctx, types.StringType, search.Tags)
+		diags.Append(tagDiags...)
 	}
-
-	if len(s.Columns) > 0 {
-		colList, d := types.ListValueFrom(ctx, types.StringType, s.Columns)
-		diags.Append(d...)
-		model.Columns = colList
-	} else {
-		model.Columns = types.ListNull(types.StringType)
-	}
-
-	if s.Sort != nil {
-		model.Sort = &savedSearchSortModel{
-			Field: types.StringValue(s.Sort.Field),
-			Order: types.StringValue(s.Sort.Order),
+	for _, filter := range search.Filters {
+		filterType := filter.Type
+		if filterType == "" {
+			filterType = "sql"
 		}
+		state.Filters = append(state.Filters, savedSearchFilterModel{
+			Type: types.StringValue(filterType), Condition: types.StringValue(filter.Condition),
+		})
 	}
+	return state
+}
 
-	return model
+func stringValueOrNull(value string) types.String {
+	if value == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(value)
 }

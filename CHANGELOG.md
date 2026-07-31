@@ -15,3 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `clickstack_saved_search` resource for reusable search queries.
 - `clickstack_sources` data source for listing available data sources.
 - `clickstack_webhooks` data source for listing configured webhooks.
+
+### Changed
+
+- `clickstack_saved_search` now uses the ClickHouse Cloud saved-search API and supports source IDs, column selection, Lucene or SQL filters, ordering, tags, and pinned SQL filters.
