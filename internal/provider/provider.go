@@ -7,14 +7,14 @@ import (
 	"context"
 	"os"
 
-	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
-	"github.com/teamlapse/terraform-provider-clickstack/internal/datasources"
-	"github.com/teamlapse/terraform-provider-clickstack/internal/resources"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/datasources"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/resources"
 )
 
 var _ provider.Provider = &ClickStackProvider{}
@@ -54,20 +54,20 @@ func (p *ClickStackProvider) Schema(_ context.Context, _ provider.SchemaRequest,
 			},
 			"organization_id": schema.StringAttribute{
 				Description: "ClickHouse Cloud organization ID. Can also be set via CLICKSTACK_ORGANIZATION_ID env var.",
-				Required:    true,
+				Optional:    true,
 			},
 			"service_id": schema.StringAttribute{
 				Description: "ClickHouse Cloud service ID for the ClickStack instance. Can also be set via CLICKSTACK_SERVICE_ID env var.",
-				Required:    true,
+				Optional:    true,
 			},
 			"api_key_id": schema.StringAttribute{
 				Description: "ClickHouse Cloud API key ID. Can also be set via CLICKSTACK_API_KEY_ID env var.",
-				Required:    true,
+				Optional:    true,
 				Sensitive:   true,
 			},
 			"api_key_secret": schema.StringAttribute{
 				Description: "ClickHouse Cloud API key secret. Can also be set via CLICKSTACK_API_KEY_SECRET env var.",
-				Required:    true,
+				Optional:    true,
 				Sensitive:   true,
 			},
 		},

@@ -87,3 +87,25 @@ resource "clickstack_saved_search" "minimal" {
 		}},
 	})
 }
+
+func TestUnitSavedSearchResource_environmentConfiguration(t *testing.T) {
+	mock := testmock.NewServer(t)
+	t.Setenv("CLICKSTACK_BASE_URL", mock.URL)
+	t.Setenv("CLICKSTACK_ORGANIZATION_ID", "test-org")
+	t.Setenv("CLICKSTACK_SERVICE_ID", "test-svc")
+	t.Setenv("CLICKSTACK_API_KEY_ID", "test-key")
+	t.Setenv("CLICKSTACK_API_KEY_SECRET", "test-secret")
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config: `
+resource "clickstack_saved_search" "environment" {
+  name      = "Environment Configured Search"
+  source_id = "src-log"
+}
+`,
+			Check: resource.TestCheckResourceAttrSet("clickstack_saved_search.environment", "id"),
+		}},
+	})
+}
