@@ -77,12 +77,13 @@ resource "clickstack_saved_search" "errors" {
 
 # Alert when errors exceed threshold
 resource "clickstack_alert" "high_errors" {
-  name            = "High Error Rate"
-  source          = "saved_search"
-  saved_search_id = clickstack_saved_search.errors.id
-  threshold       = 50
-  threshold_type  = "above"
-  interval        = "5m"
+  name                    = "High Error Rate"
+  source                  = "saved_search"
+  saved_search_id         = clickstack_saved_search.errors.id
+  threshold               = 50
+  threshold_type          = "above"
+  interval                = "5m"
+  num_consecutive_windows = 3
 
   channel {
     type             = "email"
@@ -90,6 +91,8 @@ resource "clickstack_alert" "high_errors" {
   }
 }
 ```
+
+`num_consecutive_windows` is optional and must be at least `1`. Omit it to retain single-window alert evaluation.
 
 See the [`examples/`](examples/) directory for more complete usage.
 

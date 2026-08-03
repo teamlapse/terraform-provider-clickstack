@@ -6,6 +6,7 @@ package resources
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -36,6 +37,7 @@ type alertResourceModel struct {
 	Threshold             types.Float64 `tfsdk:"threshold"`
 	ThresholdType         types.String  `tfsdk:"threshold_type"`
 	Interval              types.String  `tfsdk:"interval"`
+	NumConsecutiveWindows types.Int64   `tfsdk:"num_consecutive_windows"`
 	DashboardID           types.String  `tfsdk:"dashboard_id"`
 	TileID                types.String  `tfsdk:"tile_id"`
 	SavedSearchID         types.String  `tfsdk:"saved_search_id"`
@@ -107,6 +109,13 @@ func (r *AlertResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 					stringvalidator.OneOf("1m", "5m", "15m", "30m", "1h", "6h", "12h", "1d"),
 				},
 			},
+			"num_consecutive_windows": schema.Int64Attribute{
+				Optional:    true,
+				Description: "Number of consecutive evaluation windows that must breach the threshold before the alert fires. Must be at least 1. When omitted, the alert uses single-window evaluation.",
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
 			"dashboard_id": schema.StringAttribute{
 				Optional:    true,
 				Description: "Dashboard ID (required when source is 'tile').",
@@ -133,7 +142,7 @@ func (r *AlertResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"state": schema.StringAttribute{
 				Computed:    true,
-				Description: "Alert state: ALERT, OK, INSUFFICIENT_DATA, or DISABLED.",
+				Description: "Alert state: ALERT, PENDING, OK, INSUFFICIENT_DATA, or DISABLED.",
 			},
 		},
 		Blocks: map[string]schema.Block{
@@ -391,6 +400,10 @@ func expandAlert(ctx context.Context, plan alertResourceModel, diags *diag.Diagn
 		v := plan.Message.ValueString()
 		a.Message = &v
 	}
+	if !plan.NumConsecutiveWindows.IsNull() {
+		v := plan.NumConsecutiveWindows.ValueInt64()
+		a.NumConsecutiveWindows = &v
+	}
 	if !plan.DashboardID.IsNull() {
 		v := plan.DashboardID.ValueString()
 		a.DashboardID = &v
@@ -473,6 +486,11 @@ func flattenAlert(ctx context.Context, a *client.Alert, diags *diag.Diagnostics)
 		model.Message = types.StringValue(*a.Message)
 	} else {
 		model.Message = types.StringNull()
+	}
+	if a.NumConsecutiveWindows != nil {
+		model.NumConsecutiveWindows = types.Int64Value(*a.NumConsecutiveWindows)
+	} else {
+		model.NumConsecutiveWindows = types.Int64Null()
 	}
 	if a.DashboardID != nil {
 		model.DashboardID = types.StringValue(*a.DashboardID)

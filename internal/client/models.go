@@ -62,6 +62,7 @@ type Alert struct {
 	Threshold             float64        `json:"threshold"`
 	ThresholdType         string         `json:"thresholdType"`
 	Interval              string         `json:"interval"`
+	NumConsecutiveWindows *int64         `json:"numConsecutiveWindows,omitempty"`
 	Channel               AlertChannel   `json:"channel"`
 	DashboardID           *string        `json:"dashboardId,omitempty"`
 	TileID                *string        `json:"tileId,omitempty"`

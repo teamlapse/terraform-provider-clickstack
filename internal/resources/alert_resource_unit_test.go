@@ -4,6 +4,7 @@
 package resources_test
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -39,14 +40,15 @@ resource "clickstack_dashboard" "test" {
 data "clickstack_webhooks" "all" {}
 
 resource "clickstack_alert" "test" {
-  name           = "High Error Rate"
-  message        = "Error count exceeded threshold"
-  source         = "tile"
-  threshold      = 100
-  threshold_type = "above"
-  interval       = "5m"
-  dashboard_id   = clickstack_dashboard.test.id
-  tile_id        = clickstack_dashboard.test.tile[0].id
+  name                    = "High Error Rate"
+  message                 = "Error count exceeded threshold"
+  source                  = "tile"
+  threshold               = 100
+  threshold_type          = "above"
+  interval                = "5m"
+  num_consecutive_windows = 3
+  dashboard_id            = clickstack_dashboard.test.id
+  tile_id                 = clickstack_dashboard.test.tile[0].id
 
   channel {
     type            = "webhook"
@@ -62,6 +64,7 @@ resource "clickstack_alert" "test" {
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold", "100"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold_type", "above"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "interval", "5m"),
+					resource.TestCheckResourceAttr("clickstack_alert.test", "num_consecutive_windows", "3"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "state", "OK"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "channel.type", "webhook"),
 				),
@@ -90,14 +93,15 @@ resource "clickstack_dashboard" "test" {
 data "clickstack_webhooks" "all" {}
 
 resource "clickstack_alert" "test" {
-  name           = "High Error Rate (updated)"
-  message        = "Updated message"
-  source         = "tile"
-  threshold      = 50
-  threshold_type = "above"
-  interval       = "15m"
-  dashboard_id   = clickstack_dashboard.test.id
-  tile_id        = clickstack_dashboard.test.tile[0].id
+  name                    = "High Error Rate (updated)"
+  message                 = "Updated message"
+  source                  = "tile"
+  threshold               = 50
+  threshold_type          = "above"
+  interval                = "15m"
+  num_consecutive_windows = 5
+  dashboard_id            = clickstack_dashboard.test.id
+  tile_id                 = clickstack_dashboard.test.tile[0].id
 
   channel {
     type            = "webhook"
@@ -110,6 +114,7 @@ resource "clickstack_alert" "test" {
 					resource.TestCheckResourceAttr("clickstack_alert.test", "name", "High Error Rate (updated)"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold", "50"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "interval", "15m"),
+					resource.TestCheckResourceAttr("clickstack_alert.test", "num_consecutive_windows", "5"),
 				),
 			},
 		},
@@ -150,7 +155,37 @@ resource "clickstack_alert" "test" {
 					resource.TestCheckResourceAttrSet("clickstack_alert.test", "saved_search_id"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "channel.type", "email"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "channel.email_recipients.#", "1"),
+					resource.TestCheckNoResourceAttr("clickstack_alert.test", "num_consecutive_windows"),
 				),
+			},
+		},
+	})
+}
+
+func TestUnitAlertResource_rejectsInvalidNumConsecutiveWindows(t *testing.T) {
+	mock := testmock.NewServer(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: mock.ProviderConfig() + `
+resource "clickstack_alert" "test" {
+  source                  = "tile"
+  threshold               = 1
+  threshold_type          = "above"
+  interval                = "1m"
+  num_consecutive_windows = 0
+  dashboard_id            = "dashboard-1"
+  tile_id                 = "tile-1"
+
+  channel {
+    type             = "email"
+    email_recipients = ["oncall@example.com"]
+  }
+}
+`,
+				ExpectError: regexp.MustCompile(`num_consecutive_windows.*at least 1|value must be at least 1`),
 			},
 		},
 	})

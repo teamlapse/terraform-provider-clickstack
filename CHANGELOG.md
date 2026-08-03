@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial open-source release.
 - `clickstack_dashboard` resource for managing dashboards with tiles and filters.
 - `clickstack_alert` resource for threshold-based alerts (tile and saved search sources).
+- Optional consecutive-window evaluation for `clickstack_alert` via `num_consecutive_windows`.
 - `clickstack_saved_search` resource for reusable search queries.
 - `clickstack_sources` data source for listing available data sources.
 - `clickstack_webhooks` data source for listing configured webhooks.
