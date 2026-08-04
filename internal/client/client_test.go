@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -325,29 +326,39 @@ func TestClient_ListDashboards(t *testing.T) {
 
 func TestClient_CreateAlert(t *testing.T) {
 	name := "High Errors"
+	numConsecutiveWindows := int64(3)
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
+		var got Alert
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.NumConsecutiveWindows == nil || *got.NumConsecutiveWindows != 3 {
+			t.Errorf("expected numConsecutiveWindows 3, got %v", got.NumConsecutiveWindows)
+		}
 		jsonResponse(t, w, 200, Alert{
-			ID:            "alert-1",
-			Name:          &name,
-			Source:        "saved_search",
-			Threshold:     100,
-			ThresholdType: "above",
-			Interval:      "5m",
-			State:         "OK",
-			Channel:       AlertChannel{Type: "email"},
+			ID:                    "alert-1",
+			Name:                  &name,
+			Source:                "saved_search",
+			Threshold:             100,
+			ThresholdType:         "above",
+			Interval:              "5m",
+			NumConsecutiveWindows: &numConsecutiveWindows,
+			State:                 "OK",
+			Channel:               AlertChannel{Type: "email"},
 		})
 	}))
 
 	a, err := c.CreateAlert(context.Background(), Alert{
-		Name:          &name,
-		Source:        "saved_search",
-		Threshold:     100,
-		ThresholdType: "above",
-		Interval:      "5m",
-		Channel:       AlertChannel{Type: "email", EmailRecipients: []string{"test@example.com"}},
+		Name:                  &name,
+		Source:                "saved_search",
+		Threshold:             100,
+		ThresholdType:         "above",
+		Interval:              "5m",
+		NumConsecutiveWindows: &numConsecutiveWindows,
+		Channel:               AlertChannel{Type: "email", EmailRecipients: []string{"test@example.com"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -355,11 +366,42 @@ func TestClient_CreateAlert(t *testing.T) {
 	if a.ID != "alert-1" {
 		t.Errorf("expected id alert-1, got %s", a.ID)
 	}
+	if a.NumConsecutiveWindows == nil || *a.NumConsecutiveWindows != 3 {
+		t.Errorf("expected response numConsecutiveWindows 3, got %v", a.NumConsecutiveWindows)
+	}
+}
+
+func TestAlert_NumConsecutiveWindowsJSON(t *testing.T) {
+	numConsecutiveWindows := int64(3)
+	payload, err := json.Marshal(Alert{
+		Source:                "tile",
+		NumConsecutiveWindows: &numConsecutiveWindows,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"numConsecutiveWindows":3`) {
+		t.Fatalf("expected numConsecutiveWindows JSON field, got %s", payload)
+	}
+
+	unsetPayload, err := json.Marshal(Alert{Source: "tile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(unsetPayload), "numConsecutiveWindows") {
+		t.Fatalf("expected unset numConsecutiveWindows to be omitted, got %s", unsetPayload)
+	}
 }
 
 func TestClient_GetAlert(t *testing.T) {
+	numConsecutiveWindows := int64(3)
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		jsonResponse(t, w, 200, Alert{ID: "alert-1", Source: "tile", State: "OK"})
+		jsonResponse(t, w, 200, Alert{
+			ID:                    "alert-1",
+			Source:                "tile",
+			NumConsecutiveWindows: &numConsecutiveWindows,
+			State:                 "OK",
+		})
 	}))
 
 	a, err := c.GetAlert(context.Background(), "alert-1")
@@ -368,6 +410,45 @@ func TestClient_GetAlert(t *testing.T) {
 	}
 	if a.State != "OK" {
 		t.Errorf("expected state OK, got %q", a.State)
+	}
+	if a.NumConsecutiveWindows == nil || *a.NumConsecutiveWindows != 3 {
+		t.Errorf("expected numConsecutiveWindows 3, got %v", a.NumConsecutiveWindows)
+	}
+}
+
+func TestClient_UpdateAlert(t *testing.T) {
+	numConsecutiveWindows := int64(5)
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("expected PUT, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/alerts/alert-1" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		var got Alert
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.NumConsecutiveWindows == nil || *got.NumConsecutiveWindows != 5 {
+			t.Errorf("expected numConsecutiveWindows 5, got %v", got.NumConsecutiveWindows)
+		}
+		got.ID = "alert-1"
+		jsonResponse(t, w, 200, got)
+	}))
+
+	a, err := c.UpdateAlert(context.Background(), "alert-1", Alert{
+		Source:                "tile",
+		Threshold:             100,
+		ThresholdType:         "above",
+		Interval:              "5m",
+		NumConsecutiveWindows: &numConsecutiveWindows,
+		Channel:               AlertChannel{Type: "email"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.NumConsecutiveWindows == nil || *a.NumConsecutiveWindows != 5 {
+		t.Errorf("expected response numConsecutiveWindows 5, got %v", a.NumConsecutiveWindows)
 	}
 }
 

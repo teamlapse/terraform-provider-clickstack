@@ -15,8 +15,10 @@ resource "clickstack_alert" "high_error_rate" {
   threshold      = 100
   threshold_type = "above"
   interval       = "5m"
-  dashboard_id   = clickstack_dashboard.api_overview.id
-  tile_id        = clickstack_dashboard.api_overview.tile[1].id # Error Count tile
+  # Require three consecutive breaches to reduce one-sample alert noise.
+  num_consecutive_windows = 3
+  dashboard_id            = clickstack_dashboard.api_overview.id
+  tile_id                 = clickstack_dashboard.api_overview.tile[1].id # Error Count tile
 
   channel {
     type             = "webhook"

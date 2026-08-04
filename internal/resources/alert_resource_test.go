@@ -36,14 +36,15 @@ resource "clickstack_dashboard" "test" {
 data "clickstack_webhooks" "all" {}
 
 resource "clickstack_alert" "test" {
-  name           = "tf-acc-test-alert"
-  message        = "Error count exceeded threshold"
-  source         = "tile"
-  threshold      = 100
-  threshold_type = "above"
-  interval       = "5m"
-  dashboard_id   = clickstack_dashboard.test.id
-  tile_id        = clickstack_dashboard.test.tile[0].id
+  name                    = "tf-acc-test-alert"
+  message                 = "Error count exceeded threshold"
+  source                  = "tile"
+  threshold               = 100
+  threshold_type          = "above"
+  interval                = "5m"
+  num_consecutive_windows = 3
+  dashboard_id            = clickstack_dashboard.test.id
+  tile_id                 = clickstack_dashboard.test.tile[0].id
 
   channel {
     type    = "webhook"
@@ -59,6 +60,7 @@ resource "clickstack_alert" "test" {
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold", "100"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold_type", "above"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "interval", "5m"),
+					resource.TestCheckResourceAttr("clickstack_alert.test", "num_consecutive_windows", "3"),
 					resource.TestCheckResourceAttrSet("clickstack_alert.test", "state"),
 				),
 			},
@@ -92,14 +94,15 @@ resource "clickstack_dashboard" "test" {
 data "clickstack_webhooks" "all" {}
 
 resource "clickstack_alert" "test" {
-  name           = "tf-acc-test-alert-updated"
-  message        = "Error count exceeded updated threshold"
-  source         = "tile"
-  threshold      = 50
-  threshold_type = "above"
-  interval       = "15m"
-  dashboard_id   = clickstack_dashboard.test.id
-  tile_id        = clickstack_dashboard.test.tile[0].id
+  name                    = "tf-acc-test-alert-updated"
+  message                 = "Error count exceeded updated threshold"
+  source                  = "tile"
+  threshold               = 50
+  threshold_type          = "above"
+  interval                = "15m"
+  num_consecutive_windows = 5
+  dashboard_id            = clickstack_dashboard.test.id
+  tile_id                 = clickstack_dashboard.test.tile[0].id
 
   channel {
     type    = "webhook"
@@ -112,6 +115,7 @@ resource "clickstack_alert" "test" {
 					resource.TestCheckResourceAttr("clickstack_alert.test", "name", "tf-acc-test-alert-updated"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "threshold", "50"),
 					resource.TestCheckResourceAttr("clickstack_alert.test", "interval", "15m"),
+					resource.TestCheckResourceAttr("clickstack_alert.test", "num_consecutive_windows", "5"),
 				),
 			},
 		},
