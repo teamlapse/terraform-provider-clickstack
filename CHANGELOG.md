@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5]
+
+### Fixed
+
+- Prevent irrelevant source IDs returned by the API from being stored for `clickstack_alert` resources.
+
 ### Added
 
 - Initial open-source release.

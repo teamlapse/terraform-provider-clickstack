@@ -492,17 +492,27 @@ func flattenAlert(ctx context.Context, a *client.Alert, diags *diag.Diagnostics)
 	} else {
 		model.NumConsecutiveWindows = types.Int64Null()
 	}
-	if a.DashboardID != nil {
+	if a.Source == "saved_search" {
+		// The API may retain the source IDs from a previous tile alert. They are
+		// not valid configuration for saved-search alerts and must not be written
+		// to state, otherwise Terraform reports an inconsistent result on create.
+		model.DashboardID = types.StringNull()
+	} else if a.DashboardID != nil {
 		model.DashboardID = types.StringValue(*a.DashboardID)
 	} else {
 		model.DashboardID = types.StringNull()
 	}
-	if a.TileID != nil {
+	if a.Source == "saved_search" {
+		model.TileID = types.StringNull()
+	} else if a.TileID != nil {
 		model.TileID = types.StringValue(*a.TileID)
 	} else {
 		model.TileID = types.StringNull()
 	}
-	if a.SavedSearchID != nil {
+	if a.Source == "tile" {
+		// Likewise, a retained saved-search ID is irrelevant to tile alerts.
+		model.SavedSearchID = types.StringNull()
+	} else if a.SavedSearchID != nil {
 		model.SavedSearchID = types.StringValue(*a.SavedSearchID)
 	} else {
 		model.SavedSearchID = types.StringNull()

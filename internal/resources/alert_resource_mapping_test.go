@@ -95,6 +95,66 @@ func TestFlattenAlertNumConsecutiveWindows(t *testing.T) {
 	}
 }
 
+func TestFlattenAlertIgnoresIrrelevantSourceIDs(t *testing.T) {
+	t.Parallel()
+
+	dashboardID := "dashboard-1"
+	tileID := "tile-1"
+	savedSearchID := "saved-search-1"
+
+	tests := map[string]struct {
+		source            string
+		wantDashboardID   types.String
+		wantTileID        types.String
+		wantSavedSearchID types.String
+	}{
+		"saved search ignores retained tile IDs": {
+			source:            "saved_search",
+			wantDashboardID:   types.StringNull(),
+			wantTileID:        types.StringNull(),
+			wantSavedSearchID: types.StringValue(savedSearchID),
+		},
+		"tile ignores retained saved-search ID": {
+			source:            "tile",
+			wantDashboardID:   types.StringValue(dashboardID),
+			wantTileID:        types.StringValue(tileID),
+			wantSavedSearchID: types.StringNull(),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var diags diag.Diagnostics
+			model := flattenAlert(context.Background(), &client.Alert{
+				ID:            "alert-1",
+				Source:        test.source,
+				Threshold:     1,
+				ThresholdType: "above",
+				Interval:      "1m",
+				Channel:       client.AlertChannel{Type: "email"},
+				DashboardID:   &dashboardID,
+				TileID:        &tileID,
+				SavedSearchID: &savedSearchID,
+			}, &diags)
+
+			if diags.HasError() {
+				t.Fatalf("unexpected diagnostics: %v", diags)
+			}
+			if !model.DashboardID.Equal(test.wantDashboardID) {
+				t.Fatalf("expected dashboard_id %v, got %v", test.wantDashboardID, model.DashboardID)
+			}
+			if !model.TileID.Equal(test.wantTileID) {
+				t.Fatalf("expected tile_id %v, got %v", test.wantTileID, model.TileID)
+			}
+			if !model.SavedSearchID.Equal(test.wantSavedSearchID) {
+				t.Fatalf("expected saved_search_id %v, got %v", test.wantSavedSearchID, model.SavedSearchID)
+			}
+		})
+	}
+}
+
 func int64Pointer(value int64) *int64 {
 	return &value
 }
