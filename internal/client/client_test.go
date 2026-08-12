@@ -548,8 +548,8 @@ func TestClient_UpdateSavedSearch(t *testing.T) {
 func TestClient_ListSources(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		jsonResponse(t, w, 200, []Source{
-			{ID: "src-1", Name: "logs", Kind: "log"},
-			{ID: "src-2", Name: "traces", Kind: "trace"},
+			{ID: "src-1", Name: "logs", Kind: "log", Connection: "conn-1"},
+			{ID: "src-2", Name: "traces", Kind: "trace", Connection: "conn-1"},
 		})
 	}))
 
@@ -562,6 +562,9 @@ func TestClient_ListSources(t *testing.T) {
 	}
 	if sources[0].Kind != "log" {
 		t.Errorf("expected kind 'log', got %q", sources[0].Kind)
+	}
+	if sources[0].Connection != "conn-1" {
+		t.Errorf("expected connection 'conn-1', got %q", sources[0].Connection)
 	}
 }
 

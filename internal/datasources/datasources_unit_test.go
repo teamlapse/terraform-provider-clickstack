@@ -22,6 +22,7 @@ func TestUnitSourcesDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.#", "4"),
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.0.id", "src-log"),
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.0.kind", "log"),
+					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.0.connection_id", "conn-clickhouse"),
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.1.kind", "trace"),
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.2.kind", "metric"),
 					resource.TestCheckResourceAttr("data.clickstack_sources.all", "sources.3.kind", "session"),
