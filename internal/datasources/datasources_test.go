@@ -25,6 +25,7 @@ func TestAccSourcesDataSource(t *testing.T) {
 				Config: `data "clickstack_sources" "all" {}`,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttrSet("data.clickstack_sources.all", "sources.#"),
+					resource.TestCheckResourceAttrSet("data.clickstack_sources.all", "sources.0.connection_id"),
 				),
 			},
 		},

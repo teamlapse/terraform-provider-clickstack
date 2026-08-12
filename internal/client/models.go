@@ -120,9 +120,10 @@ type SavedSearchFilter struct {
 
 // Source represents a ClickStack data source (read-only).
 type Source struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Kind       string `json:"kind"`
+	Connection string `json:"connection"`
 }
 
 // Webhook represents a ClickStack webhook (read-only).

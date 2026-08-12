@@ -39,10 +39,10 @@ func NewServer(t *testing.T) *Server {
 		alerts:        make(map[string]client.Alert),
 		savedSearches: make(map[string]client.SavedSearch),
 		sources: []client.Source{
-			{ID: "src-log", Name: "Log Source", Kind: "log"},
-			{ID: "src-trace", Name: "Trace Source", Kind: "trace"},
-			{ID: "src-metric", Name: "Metric Source", Kind: "metric"},
-			{ID: "src-session", Name: "Session Source", Kind: "session"},
+			{ID: "src-log", Name: "Log Source", Kind: "log", Connection: "conn-clickhouse"},
+			{ID: "src-trace", Name: "Trace Source", Kind: "trace", Connection: "conn-clickhouse"},
+			{ID: "src-metric", Name: "Metric Source", Kind: "metric", Connection: "conn-clickhouse"},
+			{ID: "src-session", Name: "Session Source", Kind: "session", Connection: "conn-clickhouse"},
 		},
 		webhooks: []client.Webhook{
 			{ID: "wh-slack", Name: "Slack Alerts", Service: "slack", URL: "https://hooks.slack.com/test"},

@@ -6,10 +6,10 @@ package datasources
 import (
 	"context"
 
-	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
 )
 
 var _ datasource.DataSource = &SourcesDataSource{}
@@ -23,9 +23,10 @@ type sourcesDataSourceModel struct {
 }
 
 type sourceModel struct {
-	ID   types.String `tfsdk:"id"`
-	Name types.String `tfsdk:"name"`
-	Kind types.String `tfsdk:"kind"`
+	ID           types.String `tfsdk:"id"`
+	Name         types.String `tfsdk:"name"`
+	Kind         types.String `tfsdk:"kind"`
+	ConnectionID types.String `tfsdk:"connection_id"`
 }
 
 func NewSourcesDataSource() datasource.DataSource {
@@ -56,6 +57,10 @@ func (d *SourcesDataSource) Schema(_ context.Context, _ datasource.SchemaRequest
 						"kind": schema.StringAttribute{
 							Computed:    true,
 							Description: "Source kind (log, trace, metric, session).",
+						},
+						"connection_id": schema.StringAttribute{
+							Computed:    true,
+							Description: "ID of the ClickHouse connection used by the source.",
 						},
 					},
 				},
@@ -88,9 +93,10 @@ func (d *SourcesDataSource) Read(ctx context.Context, _ datasource.ReadRequest, 
 	}
 	for _, s := range sources {
 		state.Sources = append(state.Sources, sourceModel{
-			ID:   types.StringValue(s.ID),
-			Name: types.StringValue(s.Name),
-			Kind: types.StringValue(s.Kind),
+			ID:           types.StringValue(s.ID),
+			Name:         types.StringValue(s.Name),
+			Kind:         types.StringValue(s.Kind),
+			ConnectionID: types.StringValue(s.Connection),
 		})
 	}
 
