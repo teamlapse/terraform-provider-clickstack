@@ -6,8 +6,8 @@ package resources
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
-	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/teamlapse/terraform-provider-clickstack/internal/client"
 )
 
 var (
@@ -335,10 +336,14 @@ func mergePlanWithAPIResponse(ctx context.Context, plan dashboardResourceModel, 
 	return state
 }
 
-// normalizeJSON re-marshals JSON to produce canonical key ordering.
+// normalizeJSON re-marshals JSON to produce canonical key ordering, using
+// json.Number to preserve numeric literals exactly (avoiding float64
+// round-tripping, e.g. 0.000000001 -> 1e-9).
 func normalizeJSON(raw string) string {
+	dec := json.NewDecoder(strings.NewReader(raw))
+	dec.UseNumber()
 	var v any
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return raw
 	}
 	b, err := json.Marshal(v)
@@ -445,30 +450,12 @@ func flattenDashboard(ctx context.Context, d *client.Dashboard, diags *diag.Diag
 			H:    types.Int64Value(int64(t.H)),
 		}
 		if len(t.Config) > 0 {
-			var normalized any
-			if err := json.Unmarshal(t.Config, &normalized); err == nil {
-				if b, err := json.Marshal(normalized); err == nil {
-					tile.ConfigJSON = types.StringValue(string(b))
-				} else {
-					tile.ConfigJSON = types.StringValue(string(t.Config))
-				}
-			} else {
-				tile.ConfigJSON = types.StringValue(string(t.Config))
-			}
+			tile.ConfigJSON = types.StringValue(normalizeJSON(string(t.Config)))
 		} else {
 			tile.ConfigJSON = types.StringNull()
 		}
 		if len(t.Series) > 0 {
-			var normalized any
-			if err := json.Unmarshal(t.Series, &normalized); err == nil {
-				if b, err := json.Marshal(normalized); err == nil {
-					tile.SeriesJSON = types.StringValue(string(b))
-				} else {
-					tile.SeriesJSON = types.StringValue(string(t.Series))
-				}
-			} else {
-				tile.SeriesJSON = types.StringValue(string(t.Series))
-			}
+			tile.SeriesJSON = types.StringValue(normalizeJSON(string(t.Series)))
 		} else {
 			tile.SeriesJSON = types.StringNull()
 		}
