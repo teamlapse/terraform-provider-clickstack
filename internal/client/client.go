@@ -76,6 +76,30 @@ type Client struct {
 	dashboards     *listCache[Dashboard]
 	alerts         *listCache[Alert]
 	savedSearches  *listCache[SavedSearch]
+	sources        *listOnce[Source]
+	webhooks       *listOnce[Webhook]
+}
+
+// Every data block lists sources or webhooks again; a plan of a root with
+// dozens of them made dozens of identical calls.
+type listOnce[T any] struct {
+	mu     sync.Mutex
+	loaded bool
+	items  []T
+}
+
+func (l *listOnce[T]) get(ctx context.Context, list func(context.Context) ([]T, error)) ([]T, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.loaded {
+		items, err := list(ctx)
+		if err != nil {
+			return nil, err
+		}
+		l.items = items
+		l.loaded = true
+	}
+	return append([]T(nil), l.items...), nil
 }
 
 // A plan refreshes every resource one GET at a time and the API rate-limits
@@ -125,6 +149,8 @@ func NewClient(baseURL, organizationID, serviceID, apiKeyID, apiKeySecret string
 		dashboards:     &listCache[Dashboard]{},
 		alerts:         &listCache[Alert]{},
 		savedSearches:  &listCache[SavedSearch]{},
+		sources:        &listOnce[Source]{},
+		webhooks:       &listOnce[Webhook]{},
 	}
 }
 
@@ -436,17 +462,21 @@ func (c *Client) DeleteSavedSearch(ctx context.Context, id string) error {
 }
 
 func (c *Client) ListSources(ctx context.Context) ([]Source, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, "/sources", nil)
-	if err != nil {
-		return nil, err
-	}
-	return unwrapResult[[]Source](data)
+	return c.sources.get(ctx, func(ctx context.Context) ([]Source, error) {
+		data, err := c.doRequest(ctx, http.MethodGet, "/sources", nil)
+		if err != nil {
+			return nil, err
+		}
+		return unwrapResult[[]Source](data)
+	})
 }
 
 func (c *Client) ListWebhooks(ctx context.Context) ([]Webhook, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, "/webhooks", nil)
-	if err != nil {
-		return nil, err
-	}
-	return unwrapResult[[]Webhook](data)
+	return c.webhooks.get(ctx, func(ctx context.Context) ([]Webhook, error) {
+		data, err := c.doRequest(ctx, http.MethodGet, "/webhooks", nil)
+		if err != nil {
+			return nil, err
+		}
+		return unwrapResult[[]Webhook](data)
+	})
 }

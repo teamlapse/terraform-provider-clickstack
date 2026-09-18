@@ -664,3 +664,29 @@ func TestClient_WritesInvalidateTheList(t *testing.T) {
 		t.Fatalf("expected the list to be fetched again after a write, got %d", lists.Load())
 	}
 }
+
+func TestClient_SourcesAndWebhooksAreListedOnce(t *testing.T) {
+	var calls atomic.Int32
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/sources"):
+			jsonResponse(t, w, 200, []Source{{ID: "src-1", Name: "Logs"}})
+		case strings.HasSuffix(r.URL.Path, "/webhooks"):
+			jsonResponse(t, w, 200, []Webhook{{ID: "wh-1", Name: "Slack"}})
+		default:
+			jsonError(t, w, 404, "not found")
+		}
+	}))
+	for i := 0; i < 3; i++ {
+		if _, err := c.ListSources(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.ListWebhooks(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expected one list per type, got %d calls", calls.Load())
+	}
+}

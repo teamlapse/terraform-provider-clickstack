@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The sources and webhooks lists are fetched once per plan and shared by every data block that reads them.
+
+### Changed
+
 - Reads of dashboards, alerts and saved searches are served from one list per resource type per plan instead of one request per resource, so a large root no longer trips the API's rate limit while refreshing; an id the list does not carry is still fetched directly, and any write invalidates the list.
 
 ### Fixed
