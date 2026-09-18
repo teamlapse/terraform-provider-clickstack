@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `clickstack_dashboard` tile declared with `config_json` keeps its declared config on read when ClickStack's stored copy only lacks keys (such as a `source` name it has resolved), instead of planning an update on every run.
+
 ### Changed
 
 - The sources and webhooks lists are fetched once per plan and shared by every data block that reads them.

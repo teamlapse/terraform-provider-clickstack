@@ -225,6 +225,18 @@ func storedForm(t *testing.T, d client.Dashboard) client.Dashboard {
 	t.Helper()
 	tiles := make([]client.Tile, len(d.Tiles))
 	for i, tile := range d.Tiles {
+		if len(tile.Config) > 0 {
+			var config map[string]any
+			if err := json.Unmarshal(tile.Config, &config); err != nil {
+				t.Fatalf("stored config is not a JSON object: %v", err)
+			}
+			delete(config, "source")
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatalf("encode config: %v", err)
+			}
+			tile.Config = raw
+		}
 		if len(tile.Series) > 0 && len(tile.Config) == 0 {
 			var series []map[string]any
 			if err := json.Unmarshal(tile.Series, &series); err != nil {

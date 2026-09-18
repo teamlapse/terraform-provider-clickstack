@@ -248,6 +248,7 @@ func (r *DashboardResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	newState.Tiles = keepSeriesForm(state.Tiles, newState.Tiles)
+	newState.Tiles = keepDeclaredConfig(state.Tiles, newState.Tiles)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
 }
@@ -271,6 +272,73 @@ func keepSeriesForm(prior, fresh []tileModel) []tileModel {
 		}
 	}
 	return fresh
+}
+
+// keepDeclaredConfig keeps a tile's declared config_json when the stored copy
+// only lacks keys: ClickStack drops what it does not use (a source name it
+// has resolved, for one), which is not a change to the tile.
+func keepDeclaredConfig(prior, fresh []tileModel) []tileModel {
+	priorByID := make(map[string]tileModel, len(prior))
+	for _, tile := range prior {
+		priorByID[tile.ID.ValueString()] = tile
+	}
+	for i, tile := range fresh {
+		declared, ok := priorByID[tile.ID.ValueString()]
+		if !ok || declared.ConfigJSON.IsNull() || tile.ConfigJSON.IsNull() {
+			continue
+		}
+		if jsonSubset(tile.ConfigJSON.ValueString(), declared.ConfigJSON.ValueString()) {
+			fresh[i].ConfigJSON = declared.ConfigJSON
+		}
+	}
+	return fresh
+}
+
+// jsonSubset reports whether every key in stored appears in declared with the
+// same value, recursing into objects; lists must be equal.
+func jsonSubset(stored, declared string) bool {
+	var s, d any
+	if json.Unmarshal([]byte(stored), &s) != nil || json.Unmarshal([]byte(declared), &d) != nil {
+		return false
+	}
+	return valueSubset(s, d)
+}
+
+func valueSubset(stored, declared any) bool {
+	switch storedValue := stored.(type) {
+	case map[string]any:
+		declaredValue, ok := declared.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, value := range storedValue {
+			if !valueSubset(value, declaredValue[key]) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		declaredValue, ok := declared.([]any)
+		if !ok || len(declaredValue) != len(storedValue) {
+			return false
+		}
+		for i := range storedValue {
+			if !valueSubset(storedValue[i], declaredValue[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return normalizeScalar(stored) == normalizeScalar(declared)
+	}
+}
+
+func normalizeScalar(value any) string {
+	b, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func (r *DashboardResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
