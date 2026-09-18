@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A `clickstack_dashboard` tile declared with `series_json` no longer plans an update on every run: ClickStack stores it as `config` and returns only that on read, which the provider now keeps in the declared form.
+
 ## [0.0.5]
 
 ### Fixed

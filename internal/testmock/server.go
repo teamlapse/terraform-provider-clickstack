@@ -216,7 +216,36 @@ func (s *Server) getDashboard(t *testing.T, w http.ResponseWriter, id string) {
 		writeError(t, w, 404, "dashboard not found")
 		return
 	}
-	writeJSON(t, w, 200, d)
+	writeJSON(t, w, 200, storedForm(t, d))
+}
+
+// storedForm mirrors ClickStack, which keeps a tile written as series in its
+// config form and returns only that on read.
+func storedForm(t *testing.T, d client.Dashboard) client.Dashboard {
+	t.Helper()
+	tiles := make([]client.Tile, len(d.Tiles))
+	for i, tile := range d.Tiles {
+		if len(tile.Series) > 0 && len(tile.Config) == 0 {
+			var series []map[string]any
+			if err := json.Unmarshal(tile.Series, &series); err != nil {
+				t.Fatalf("stored series is not a JSON array: %v", err)
+			}
+			config := map[string]any{"select": series}
+			if len(series) > 0 {
+				config["displayType"] = series[0]["type"]
+				config["sourceId"] = series[0]["sourceId"]
+			}
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatalf("encode config: %v", err)
+			}
+			tile.Config = raw
+			tile.Series = nil
+		}
+		tiles[i] = tile
+	}
+	d.Tiles = tiles
+	return d
 }
 
 func (s *Server) updateDashboard(t *testing.T, w http.ResponseWriter, r *http.Request, id string) {

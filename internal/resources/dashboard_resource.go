@@ -247,8 +247,30 @@ func (r *DashboardResource) Read(ctx context.Context, req resource.ReadRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	newState.Tiles = keepSeriesForm(state.Tiles, newState.Tiles)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &newState)...)
+}
+
+// keepSeriesForm keeps a tile declared as series_json in that form. ClickStack
+// stores such a tile as config and returns only the config on read, which is
+// its encoding of the same series, not a change to the tile.
+func keepSeriesForm(prior, fresh []tileModel) []tileModel {
+	priorByID := make(map[string]tileModel, len(prior))
+	for _, tile := range prior {
+		priorByID[tile.ID.ValueString()] = tile
+	}
+	for i, tile := range fresh {
+		declared, ok := priorByID[tile.ID.ValueString()]
+		if !ok || declared.SeriesJSON.IsNull() || !declared.ConfigJSON.IsNull() {
+			continue
+		}
+		if tile.SeriesJSON.IsNull() && !tile.ConfigJSON.IsNull() {
+			fresh[i].SeriesJSON = declared.SeriesJSON
+			fresh[i].ConfigJSON = types.StringNull()
+		}
+	}
+	return fresh
 }
 
 func (r *DashboardResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
