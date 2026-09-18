@@ -73,6 +73,44 @@ type Client struct {
 	apiKeySecret   string
 	httpClient     *http.Client
 	rateLimiter    *rateLimiter
+	dashboards     *listCache[Dashboard]
+	alerts         *listCache[Alert]
+	savedSearches  *listCache[SavedSearch]
+}
+
+// A plan refreshes every resource one GET at a time and the API rate-limits
+// that volume, so each resource type is listed once per client and reads
+// are served from the list; a write invalidates it.
+type listCache[T any] struct {
+	mu     sync.Mutex
+	loaded bool
+	items  map[string]T
+}
+
+func (l *listCache[T]) get(ctx context.Context, id string, list func(context.Context) ([]T, error), key func(T) string) (T, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.loaded {
+		items, err := list(ctx)
+		if err != nil {
+			var zero T
+			return zero, false, err
+		}
+		l.items = make(map[string]T, len(items))
+		for _, item := range items {
+			l.items[key(item)] = item
+		}
+		l.loaded = true
+	}
+	item, ok := l.items[id]
+	return item, ok, nil
+}
+
+func (l *listCache[T]) invalidate() {
+	l.mu.Lock()
+	l.loaded = false
+	l.items = nil
+	l.mu.Unlock()
 }
 
 func NewClient(baseURL, organizationID, serviceID, apiKeyID, apiKeySecret string) *Client {
@@ -84,6 +122,9 @@ func NewClient(baseURL, organizationID, serviceID, apiKeyID, apiKeySecret string
 		apiKeySecret:   apiKeySecret,
 		httpClient:     &http.Client{Timeout: 30 * time.Second},
 		rateLimiter:    newRateLimiter(defaultRateLimit),
+		dashboards:     &listCache[Dashboard]{},
+		alerts:         &listCache[Alert]{},
+		savedSearches:  &listCache[SavedSearch]{},
 	}
 }
 
@@ -226,6 +267,13 @@ func (c *Client) ListDashboards(ctx context.Context) ([]Dashboard, error) {
 }
 
 func (c *Client) GetDashboard(ctx context.Context, id string) (*Dashboard, error) {
+	cached, ok, err := c.dashboards.get(ctx, id, c.ListDashboards, func(item Dashboard) string { return item.ID })
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return &cached, nil
+	}
 	data, err := c.doRequest(ctx, http.MethodGet, "/dashboards/"+id, nil)
 	if err != nil {
 		return nil, err
@@ -238,6 +286,7 @@ func (c *Client) GetDashboard(ctx context.Context, id string) (*Dashboard, error
 }
 
 func (c *Client) CreateDashboard(ctx context.Context, dashboard Dashboard) (*Dashboard, error) {
+	c.dashboards.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/dashboards", dashboard)
 	if err != nil {
 		return nil, err
@@ -250,6 +299,7 @@ func (c *Client) CreateDashboard(ctx context.Context, dashboard Dashboard) (*Das
 }
 
 func (c *Client) UpdateDashboard(ctx context.Context, id string, dashboard Dashboard) (*Dashboard, error) {
+	c.dashboards.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/dashboards/"+id, dashboard)
 	if err != nil {
 		return nil, err
@@ -262,6 +312,7 @@ func (c *Client) UpdateDashboard(ctx context.Context, id string, dashboard Dashb
 }
 
 func (c *Client) DeleteDashboard(ctx context.Context, id string) error {
+	c.dashboards.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/dashboards/"+id, nil)
 	return err
 }
@@ -275,6 +326,13 @@ func (c *Client) ListAlerts(ctx context.Context) ([]Alert, error) {
 }
 
 func (c *Client) GetAlert(ctx context.Context, id string) (*Alert, error) {
+	cached, ok, err := c.alerts.get(ctx, id, c.ListAlerts, func(item Alert) string { return item.ID })
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return &cached, nil
+	}
 	data, err := c.doRequest(ctx, http.MethodGet, "/alerts/"+id, nil)
 	if err != nil {
 		return nil, err
@@ -287,6 +345,7 @@ func (c *Client) GetAlert(ctx context.Context, id string) (*Alert, error) {
 }
 
 func (c *Client) CreateAlert(ctx context.Context, alert Alert) (*Alert, error) {
+	c.alerts.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/alerts", alert)
 	if err != nil {
 		return nil, err
@@ -299,6 +358,7 @@ func (c *Client) CreateAlert(ctx context.Context, alert Alert) (*Alert, error) {
 }
 
 func (c *Client) UpdateAlert(ctx context.Context, id string, alert Alert) (*Alert, error) {
+	c.alerts.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/alerts/"+id, alert)
 	if err != nil {
 		return nil, err
@@ -311,6 +371,7 @@ func (c *Client) UpdateAlert(ctx context.Context, id string, alert Alert) (*Aler
 }
 
 func (c *Client) DeleteAlert(ctx context.Context, id string) error {
+	c.alerts.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/alerts/"+id, nil)
 	return err
 }
@@ -324,6 +385,13 @@ func (c *Client) ListSavedSearches(ctx context.Context) ([]SavedSearch, error) {
 }
 
 func (c *Client) GetSavedSearch(ctx context.Context, id string) (*SavedSearch, error) {
+	cached, ok, err := c.savedSearches.get(ctx, id, c.ListSavedSearches, func(item SavedSearch) string { return item.ID })
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return &cached, nil
+	}
 	data, err := c.doRequest(ctx, http.MethodGet, "/saved-searches/"+id, nil)
 	if err != nil {
 		return nil, err
@@ -336,6 +404,7 @@ func (c *Client) GetSavedSearch(ctx context.Context, id string) (*SavedSearch, e
 }
 
 func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*SavedSearch, error) {
+	c.savedSearches.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/saved-searches", search)
 	if err != nil {
 		return nil, err
@@ -348,6 +417,7 @@ func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*Sa
 }
 
 func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedSearch) (*SavedSearch, error) {
+	c.savedSearches.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/saved-searches/"+id, search)
 	if err != nil {
 		return nil, err
@@ -360,6 +430,7 @@ func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedS
 }
 
 func (c *Client) DeleteSavedSearch(ctx context.Context, id string) error {
+	c.savedSearches.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/saved-searches/"+id, nil)
 	return err
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Reads of dashboards, alerts and saved searches are served from one list per resource type per plan instead of one request per resource, so a large root no longer trips the API's rate limit while refreshing; an id the list does not carry is still fetched directly, and any write invalidates the list.
+
 ### Fixed
 
 - A `clickstack_dashboard` tile declared with `series_json` no longer plans an update on every run: ClickStack stores it as `config` and returns only that on read, which the provider now keeps in the declared form.

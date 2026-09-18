@@ -262,6 +262,10 @@ func TestClient_CreateDashboard(t *testing.T) {
 
 func TestClient_GetDashboard(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/organizations/org-1/services/svc-1/clickstack/dashboards" {
+			jsonResponse(t, w, 200, []Dashboard{})
+			return
+		}
 		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/dashboards/dash-1" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
@@ -395,7 +399,11 @@ func TestAlert_NumConsecutiveWindowsJSON(t *testing.T) {
 
 func TestClient_GetAlert(t *testing.T) {
 	numConsecutiveWindows := int64(3)
-	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/alerts") {
+			jsonResponse(t, w, 200, []Alert{})
+			return
+		}
 		jsonResponse(t, w, 200, Alert{
 			ID:                    "alert-1",
 			Source:                "tile",
@@ -494,6 +502,10 @@ func TestClient_CreateSavedSearch(t *testing.T) {
 
 func TestClient_GetSavedSearch(t *testing.T) {
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches" {
+			jsonResponse(t, w, 200, []SavedSearch{})
+			return
+		}
 		if r.URL.Path != "/v1/organizations/org-1/services/svc-1/clickstack/saved-searches/ss-1" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
@@ -584,5 +596,71 @@ func TestClient_ListWebhooks(t *testing.T) {
 	}
 	if webhooks[0].Service != "slack" {
 		t.Errorf("expected service 'slack', got %q", webhooks[0].Service)
+	}
+}
+
+func TestClient_ReadsAreServedFromOneList(t *testing.T) {
+	var lists, gets atomic.Int32
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/dashboards"):
+			lists.Add(1)
+			jsonResponse(t, w, 200, []Dashboard{
+				{ID: "dash-1", Name: "One", Tiles: []Tile{{ID: "t1", Name: "Tile"}}},
+				{ID: "dash-2", Name: "Two"},
+			})
+		case strings.Contains(r.URL.Path, "/dashboards/"):
+			gets.Add(1)
+			jsonResponse(t, w, 200, Dashboard{ID: "dash-3", Name: "Three"})
+		default:
+			jsonError(t, w, 404, "not found")
+		}
+	}))
+
+	one, err := c.GetDashboard(context.Background(), "dash-1")
+	if err != nil || one.Name != "One" || len(one.Tiles) != 1 {
+		t.Fatalf("expected dash-1 from the list, got %+v, %v", one, err)
+	}
+	if _, err := c.GetDashboard(context.Background(), "dash-2"); err != nil {
+		t.Fatalf("expected dash-2 from the list: %v", err)
+	}
+	if lists.Load() != 1 || gets.Load() != 0 {
+		t.Fatalf("expected one list and no gets, got %d lists, %d gets", lists.Load(), gets.Load())
+	}
+
+	three, err := c.GetDashboard(context.Background(), "dash-3")
+	if err != nil || three.Name != "Three" {
+		t.Fatalf("expected a direct get for an id the list lacks, got %+v, %v", three, err)
+	}
+	if gets.Load() != 1 {
+		t.Fatalf("expected one direct get, got %d", gets.Load())
+	}
+}
+
+func TestClient_WritesInvalidateTheList(t *testing.T) {
+	var lists atomic.Int32
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/alerts"):
+			lists.Add(1)
+			jsonResponse(t, w, 200, []Alert{{ID: "alert-1"}})
+		case r.Method == http.MethodDelete:
+			jsonResponse(t, w, 200, map[string]any{})
+		default:
+			jsonError(t, w, 404, "not found")
+		}
+	}))
+
+	if _, err := c.GetAlert(context.Background(), "alert-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.DeleteAlert(context.Background(), "alert-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.GetAlert(context.Background(), "alert-1"); err != nil {
+		t.Fatal(err)
+	}
+	if lists.Load() != 2 {
+		t.Fatalf("expected the list to be fetched again after a write, got %d", lists.Load())
 	}
 }
