@@ -275,8 +275,10 @@ func keepSeriesForm(prior, fresh []tileModel) []tileModel {
 }
 
 // keepDeclaredConfig keeps a tile's declared config_json when the stored copy
-// only lacks keys: ClickStack drops what it does not use (a source name it
-// has resolved, for one), which is not a change to the tile.
+// only lacks keys or carries ClickStack's default for a key the declaration
+// leaves out: ClickStack drops what it does not use (a source name it has
+// resolved, for one) and fills in its defaults on read, neither of which is a
+// change to the tile.
 func keepDeclaredConfig(prior, fresh []tileModel) []tileModel {
 	priorByID := make(map[string]tileModel, len(prior))
 	for _, tile := range prior {
@@ -294,14 +296,46 @@ func keepDeclaredConfig(prior, fresh []tileModel) []tileModel {
 	return fresh
 }
 
-// jsonSubset reports whether every key in stored appears in declared with the
-// same value, recursing into objects; lists must be equal.
+// jsonSubset reports whether every key in stored, other than a server default
+// the declaration leaves out, appears in declared with the same value,
+// recursing into objects; lists must be equal.
 func jsonSubset(stored, declared string) bool {
 	var s, d any
 	if json.Unmarshal([]byte(stored), &s) != nil || json.Unmarshal([]byte(declared), &d) != nil {
 		return false
 	}
+	storedConfig, storedIsObject := s.(map[string]any)
+	declaredConfig, declaredIsObject := d.(map[string]any)
+	if storedIsObject && declaredIsObject {
+		for key, value := range serverDefaults(storedConfig) {
+			if _, declaredKey := declaredConfig[key]; !declaredKey && normalizeScalar(storedConfig[key]) == normalizeScalar(value) {
+				delete(storedConfig, key)
+			}
+		}
+	}
 	return valueSubset(s, d)
+}
+
+// serverDefaults are the values ClickStack returns for keys a tile config of
+// this display type leaves out.
+func serverDefaults(config map[string]any) map[string]any {
+	displayType := config["displayType"]
+	timeSeries := displayType == "line" || displayType == "stacked_bar"
+	defaults := map[string]any{}
+	if timeSeries {
+		defaults["fillNulls"] = true
+	}
+	if config["configType"] != "sql" && (timeSeries || displayType == "table") {
+		defaults["asRatio"] = false
+	}
+	switch displayType {
+	case "search":
+		defaults["select"] = ""
+		defaults["whereLanguage"] = "lucene"
+	case "markdown":
+		defaults["markdown"] = ""
+	}
+	return defaults
 }
 
 func valueSubset(stored, declared any) bool {

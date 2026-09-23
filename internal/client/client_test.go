@@ -665,6 +665,46 @@ func TestClient_WritesInvalidateTheList(t *testing.T) {
 	}
 }
 
+func TestClient_AListFetchedDuringAWriteIsDropped(t *testing.T) {
+	var name atomic.Value
+	name.Store("before")
+	putStarted := make(chan struct{})
+	release := make(chan struct{})
+	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/dashboards"):
+			jsonResponse(t, w, 200, []Dashboard{{ID: "dash-1", Name: name.Load().(string)}})
+		case r.Method == http.MethodPut:
+			close(putStarted)
+			<-release
+			name.Store("after")
+			jsonResponse(t, w, 200, Dashboard{ID: "dash-1", Name: "after"})
+		default:
+			jsonError(t, w, 404, "not found")
+		}
+	}))
+
+	updated := make(chan error)
+	go func() {
+		_, err := c.UpdateDashboard(context.Background(), "dash-1", Dashboard{Name: "after"})
+		updated <- err
+	}()
+	<-putStarted
+	during, err := c.GetDashboard(context.Background(), "dash-1")
+	if err != nil || during.Name != "before" {
+		t.Fatalf("expected the dashboard as it was during the write, got %+v, %v", during, err)
+	}
+	close(release)
+	if err := <-updated; err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := c.GetDashboard(context.Background(), "dash-1")
+	if err != nil || after.Name != "after" {
+		t.Fatalf("expected the written dashboard once the write completed, got %+v, %v", after, err)
+	}
+}
+
 func TestClient_SourcesAndWebhooksAreListedOnce(t *testing.T) {
 	var calls atomic.Int32
 	c := testServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

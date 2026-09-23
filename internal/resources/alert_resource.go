@@ -5,6 +5,8 @@ package resources
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -122,7 +124,7 @@ func (r *AlertResource) Schema(_ context.Context, _ resource.SchemaRequest, resp
 			},
 			"tile_id": schema.StringAttribute{
 				Optional:    true,
-				Description: "Tile ID (required when source is 'tile').",
+				Description: "Tile ID (required when source is 'tile'). The tile must be a line, stacked_bar or number tile.",
 			},
 			"saved_search_id": schema.StringAttribute{
 				Optional:    true,
@@ -211,6 +213,7 @@ func (r *AlertResource) Create(ctx context.Context, req resource.CreateRequest, 
 		return
 	}
 
+	resp.Diagnostics.Append(r.checkAlertableTile(ctx, plan)...)
 	alert := expandAlert(ctx, plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -268,6 +271,7 @@ func (r *AlertResource) Update(ctx context.Context, req resource.UpdateRequest, 
 		return
 	}
 
+	resp.Diagnostics.Append(r.checkAlertableTile(ctx, plan)...)
 	alert := expandAlert(ctx, plan, &resp.Diagnostics)
 	if resp.Diagnostics.HasError() {
 		return
@@ -301,6 +305,41 @@ func (r *AlertResource) Delete(ctx context.Context, req resource.DeleteRequest, 
 		}
 		resp.Diagnostics.AddError("Unable to delete alert", err.Error())
 	}
+}
+
+// alertableDisplayTypes are the tile display types ClickStack evaluates an
+// alert on. It accepts an alert on any other tile, never evaluates it, and
+// deletes it the next time the dashboard is saved.
+var alertableDisplayTypes = map[string]bool{"line": true, "stacked_bar": true, "number": true}
+
+func (r *AlertResource) checkAlertableTile(ctx context.Context, plan alertResourceModel) diag.Diagnostics {
+	var diags diag.Diagnostics
+	if plan.Source.ValueString() != "tile" || plan.DashboardID.IsNull() || plan.TileID.IsNull() {
+		return diags
+	}
+	dashboard, err := r.client.GetDashboard(ctx, plan.DashboardID.ValueString())
+	if err != nil {
+		diags.AddError("Unable to read the alert's dashboard", err.Error())
+		return diags
+	}
+	for _, tile := range dashboard.Tiles {
+		if tile.ID != plan.TileID.ValueString() {
+			continue
+		}
+		var config struct {
+			DisplayType string `json:"displayType"`
+		}
+		if json.Unmarshal(tile.Config, &config) != nil || config.DisplayType == "" || alertableDisplayTypes[config.DisplayType] {
+			return diags
+		}
+		diags.AddAttributeError(
+			path.Root("tile_id"),
+			"Tile does not support alerts",
+			fmt.Sprintf("Tile %q (%s) on dashboard %s is a %s tile. ClickStack only evaluates alerts on line, stacked_bar and number tiles: it never evaluates an alert on any other tile, and deletes it the next time the dashboard is saved.", tile.Name, tile.ID, dashboard.ID, config.DisplayType),
+		)
+		return diags
+	}
+	return diags
 }
 
 func (r *AlertResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
