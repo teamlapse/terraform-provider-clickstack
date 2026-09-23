@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `clickstack_dashboard` tile declared with `config_json` no longer plans an update when ClickStack returns its default for a key the declaration leaves out: `fillNulls: true` on a line or stacked-bar tile, `asRatio: false` on a builder line, stacked-bar or table tile, `select: ""` and `whereLanguage: "lucene"` on a search tile, and `markdown: ""` on a markdown tile. A stored value that differs from the default still shows.
+- A `clickstack_alert` on a tile other than a line, stacked-bar or number tile now fails to create or update. ClickStack accepted such an alert but never evaluated it, and deleted it the next time the dashboard was saved, so the following plan created it again.
+- A dashboard, alert or saved search read while a write to the same type was in flight no longer keeps serving the pre-write copy once the write completes.
 - A `clickstack_dashboard` tile declared with `config_json` keeps its declared config on read when ClickStack's stored copy only lacks keys (such as a `source` name it has resolved), instead of planning an update on every run.
 
 ### Changed

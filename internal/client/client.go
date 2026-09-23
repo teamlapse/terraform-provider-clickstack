@@ -104,7 +104,8 @@ func (l *listOnce[T]) get(ctx context.Context, list func(context.Context) ([]T, 
 
 // A plan refreshes every resource one GET at a time and the API rate-limits
 // that volume, so each resource type is listed once per client and reads
-// are served from the list; a write invalidates it.
+// are served from the list; a write invalidates it when it returns, which
+// also drops a list fetched while the write was in flight.
 type listCache[T any] struct {
 	mu     sync.Mutex
 	loaded bool
@@ -312,7 +313,7 @@ func (c *Client) GetDashboard(ctx context.Context, id string) (*Dashboard, error
 }
 
 func (c *Client) CreateDashboard(ctx context.Context, dashboard Dashboard) (*Dashboard, error) {
-	c.dashboards.invalidate()
+	defer c.dashboards.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/dashboards", dashboard)
 	if err != nil {
 		return nil, err
@@ -325,7 +326,7 @@ func (c *Client) CreateDashboard(ctx context.Context, dashboard Dashboard) (*Das
 }
 
 func (c *Client) UpdateDashboard(ctx context.Context, id string, dashboard Dashboard) (*Dashboard, error) {
-	c.dashboards.invalidate()
+	defer c.dashboards.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/dashboards/"+id, dashboard)
 	if err != nil {
 		return nil, err
@@ -338,7 +339,7 @@ func (c *Client) UpdateDashboard(ctx context.Context, id string, dashboard Dashb
 }
 
 func (c *Client) DeleteDashboard(ctx context.Context, id string) error {
-	c.dashboards.invalidate()
+	defer c.dashboards.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/dashboards/"+id, nil)
 	return err
 }
@@ -371,7 +372,7 @@ func (c *Client) GetAlert(ctx context.Context, id string) (*Alert, error) {
 }
 
 func (c *Client) CreateAlert(ctx context.Context, alert Alert) (*Alert, error) {
-	c.alerts.invalidate()
+	defer c.alerts.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/alerts", alert)
 	if err != nil {
 		return nil, err
@@ -384,7 +385,7 @@ func (c *Client) CreateAlert(ctx context.Context, alert Alert) (*Alert, error) {
 }
 
 func (c *Client) UpdateAlert(ctx context.Context, id string, alert Alert) (*Alert, error) {
-	c.alerts.invalidate()
+	defer c.alerts.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/alerts/"+id, alert)
 	if err != nil {
 		return nil, err
@@ -397,7 +398,7 @@ func (c *Client) UpdateAlert(ctx context.Context, id string, alert Alert) (*Aler
 }
 
 func (c *Client) DeleteAlert(ctx context.Context, id string) error {
-	c.alerts.invalidate()
+	defer c.alerts.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/alerts/"+id, nil)
 	return err
 }
@@ -430,7 +431,7 @@ func (c *Client) GetSavedSearch(ctx context.Context, id string) (*SavedSearch, e
 }
 
 func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*SavedSearch, error) {
-	c.savedSearches.invalidate()
+	defer c.savedSearches.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPost, "/saved-searches", search)
 	if err != nil {
 		return nil, err
@@ -443,7 +444,7 @@ func (c *Client) CreateSavedSearch(ctx context.Context, search SavedSearch) (*Sa
 }
 
 func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedSearch) (*SavedSearch, error) {
-	c.savedSearches.invalidate()
+	defer c.savedSearches.invalidate()
 	data, err := c.doRequest(ctx, http.MethodPut, "/saved-searches/"+id, search)
 	if err != nil {
 		return nil, err
@@ -456,7 +457,7 @@ func (c *Client) UpdateSavedSearch(ctx context.Context, id string, search SavedS
 }
 
 func (c *Client) DeleteSavedSearch(ctx context.Context, id string) error {
-	c.savedSearches.invalidate()
+	defer c.savedSearches.invalidate()
 	_, err := c.doRequest(ctx, http.MethodDelete, "/saved-searches/"+id, nil)
 	return err
 }

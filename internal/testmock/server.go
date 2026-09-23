@@ -176,7 +176,7 @@ func (s *Server) listDashboards(t *testing.T, w http.ResponseWriter) {
 	defer s.mu.Unlock()
 	dashboards := make([]client.Dashboard, 0, len(s.dashboards))
 	for _, d := range s.dashboards {
-		dashboards = append(dashboards, d)
+		dashboards = append(dashboards, storedForm(t, d))
 	}
 	writeJSON(t, w, 200, dashboards)
 }
@@ -220,44 +220,57 @@ func (s *Server) getDashboard(t *testing.T, w http.ResponseWriter, id string) {
 }
 
 // storedForm mirrors ClickStack, which keeps a tile written as series in its
-// config form and returns only that on read.
+// config form, drops a resolved source name, fills in its defaults, and
+// returns only the config on read.
 func storedForm(t *testing.T, d client.Dashboard) client.Dashboard {
 	t.Helper()
 	tiles := make([]client.Tile, len(d.Tiles))
 	for i, tile := range d.Tiles {
-		if len(tile.Config) > 0 {
-			var config map[string]any
+		var config map[string]any
+		switch {
+		case len(tile.Config) > 0:
 			if err := json.Unmarshal(tile.Config, &config); err != nil {
 				t.Fatalf("stored config is not a JSON object: %v", err)
 			}
 			delete(config, "source")
-			raw, err := json.Marshal(config)
-			if err != nil {
-				t.Fatalf("encode config: %v", err)
-			}
-			tile.Config = raw
-		}
-		if len(tile.Series) > 0 && len(tile.Config) == 0 {
+		case len(tile.Series) > 0:
 			var series []map[string]any
 			if err := json.Unmarshal(tile.Series, &series); err != nil {
 				t.Fatalf("stored series is not a JSON array: %v", err)
 			}
-			config := map[string]any{"select": series}
+			config = map[string]any{"select": series}
 			if len(series) > 0 {
-				config["displayType"] = series[0]["type"]
+				config["displayType"] = seriesDisplayTypes[fmt.Sprint(series[0]["type"])]
 				config["sourceId"] = series[0]["sourceId"]
 			}
-			raw, err := json.Marshal(config)
-			if err != nil {
-				t.Fatalf("encode config: %v", err)
-			}
-			tile.Config = raw
 			tile.Series = nil
+		default:
+			tiles[i] = tile
+			continue
 		}
+		fillDefaults(config)
+		raw, err := json.Marshal(config)
+		if err != nil {
+			t.Fatalf("encode config: %v", err)
+		}
+		tile.Config = raw
 		tiles[i] = tile
 	}
 	d.Tiles = tiles
 	return d
+}
+
+var seriesDisplayTypes = map[string]string{"time": "line", "table": "table", "number": "number"}
+
+func fillDefaults(config map[string]any) {
+	displayType := config["displayType"]
+	builder := config["configType"] != "sql"
+	if _, ok := config["fillNulls"]; !ok && (displayType == "line" || displayType == "stacked_bar") {
+		config["fillNulls"] = true
+	}
+	if _, ok := config["asRatio"]; !ok && builder && (displayType == "line" || displayType == "stacked_bar" || displayType == "table") {
+		config["asRatio"] = false
+	}
 }
 
 func (s *Server) updateDashboard(t *testing.T, w http.ResponseWriter, r *http.Request, id string) {

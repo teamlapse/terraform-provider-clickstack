@@ -4,6 +4,7 @@
 package resources_test
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -231,4 +232,65 @@ resource "clickstack_alert" "test" {
 			},
 		},
 	})
+}
+
+func TestUnitAlertResource_rejectsTileWithoutAlertSupport(t *testing.T) {
+	mock := testmock.NewServer(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config:      mock.ProviderConfig() + tileAlertConfig("table"),
+				ExpectError: regexp.MustCompile(`Tile does not support alerts`),
+			},
+			{
+				Config: mock.ProviderConfig() + tileAlertConfig("time"),
+				Check:  resource.TestCheckResourceAttrSet("clickstack_alert.test", "id"),
+			},
+		},
+	})
+}
+
+func tileAlertConfig(seriesType string) string {
+	return fmt.Sprintf(`
+resource "clickstack_dashboard" "test" {
+  name = "Table Alert Dashboard"
+
+  tile {
+    name = "Errors by Reason"
+    x    = 0
+    y    = 0
+    w    = 12
+    h    = 6
+    series_json = jsonencode([{
+      type          = %q
+      sourceId      = "src-metric"
+      aggFn         = "sum"
+      where         = ""
+      whereLanguage = "sql"
+      groupBy       = ["reason"]
+    }])
+  }
+}
+
+data "clickstack_webhooks" "all" {}
+
+resource "clickstack_alert" "test" {
+  name           = "Errors"
+  message        = "Errors exceeded threshold"
+  source         = "tile"
+  threshold      = 5
+  threshold_type = "above"
+  interval       = "5m"
+  dashboard_id   = clickstack_dashboard.test.id
+  tile_id        = clickstack_dashboard.test.tile[0].id
+
+  channel {
+    type            = "webhook"
+    webhook_id      = data.clickstack_webhooks.all.webhooks[0].id
+    webhook_service = data.clickstack_webhooks.all.webhooks[0].service
+  }
+}
+`, seriesType)
 }

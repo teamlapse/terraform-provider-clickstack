@@ -179,3 +179,52 @@ resource "clickstack_dashboard" "series" {
 		},
 	})
 }
+
+func TestUnitDashboardResource_keepsDeclaredConfigOverServerDefaults(t *testing.T) {
+	mock := testmock.NewServer(t)
+
+	resource.UnitTest(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: mock.ProviderConfig() + `
+resource "clickstack_dashboard" "defaults" {
+  name = "Defaults Dashboard"
+
+  tile {
+    name = "Raw SQL Line"
+    x    = 0
+    y    = 0
+    w    = 12
+    h    = 6
+    config_json = jsonencode({
+      configType   = "sql"
+      displayType  = "line"
+      connectionId = "conn-1"
+      sourceId     = "src-metric"
+      sqlTemplate  = "SELECT 1"
+    })
+  }
+
+  tile {
+    name = "Builder Table"
+    x    = 12
+    y    = 0
+    w    = 12
+    h    = 6
+    config_json = jsonencode({
+      displayType = "table"
+      sourceId    = "src-metric"
+      select      = [{ aggFn = "count", where = "", whereLanguage = "sql" }]
+    })
+  }
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("clickstack_dashboard.defaults", "tile.0.config_json", `{"configType":"sql","connectionId":"conn-1","displayType":"line","sourceId":"src-metric","sqlTemplate":"SELECT 1"}`),
+					resource.TestCheckResourceAttr("clickstack_dashboard.defaults", "tile.1.config_json", `{"displayType":"table","select":[{"aggFn":"count","where":"","whereLanguage":"sql"}],"sourceId":"src-metric"}`),
+				),
+			},
+		},
+	})
+}
